@@ -23,13 +23,13 @@ Everything runs in your browser. The camera picture, your photos and the model's
 | OK | OK, in the middle of the wheel | Enter or Z |
 | SELECT | the small ☰ key | Esc or Tab |
 
-In the viewfinder the work order is a list in the top left corner. ▴ ▾ picks the request you're aiming at, ◂ ▸ zooms once you've earned the lens, and SELECT opens the menu. When the quota is met the Office offers to end the shift. Hold the phone sideways for the full camera layout; on a phone, Share ▸ Add to Home Screen gives you full screen.
+In the viewfinder the work order is a list in the top left corner. ▴ ▾ picks the request you're aiming at (a photo is judged only for that one), ◂ ▸ zooms once you've earned the lens, and SELECT opens the menu. For colours and shapes the unit shows live what it sees: a reading under the list, and a red outline around a shape it has found. When the quota is met the Office offers to end the shift. Hold the phone sideways for the full camera layout; on a phone, Share ▸ Add to Home Screen gives you full screen.
 
 ## How it recognises things
 
 | Module | What it does | Model | Download |
 |---|---|---|---|
-| CHROMA, FORM | colour, rectangles, circles, triangles, symmetry, light | none (plain code) | 0 |
+| CHROMA, FORM | colour, rectangles (edges and straight lines, like a document scanner), circles, triangles, symmetry, light | none (plain code) | 0 |
 | INVENTORY | 80 kinds of object | EfficientDet-Lite0 int8 (MediaPipe) | 4.6 MB |
 | CENSUS | faces, tracked live | BlazeFace (MediaPipe) | 0.2 MB |
 | SENTIMENT | expressions and head turn | Face Landmarker, 52 blendshapes (MediaPipe) | 3.8 MB |

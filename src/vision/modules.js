@@ -54,11 +54,14 @@ export class Modules {
       this.cvCanvas = document.createElement('canvas');
       this.cvCanvas.width = 160; this.cvCanvas.height = 120;
       this.cvCtx = this.cvCanvas.getContext('2d', { willReadFrequently: true });
+      this.bigCanvas = document.createElement('canvas'); // the rectangle finder wants more detail
+      this.bigCanvas.width = 320; this.bigCanvas.height = 240;
+      this.bigCtx = this.bigCanvas.getContext('2d', { willReadFrequently: true });
     }
-    this.cvCtx.imageSmoothingEnabled = true;
-    this.cvCtx.imageSmoothingQuality = 'high';
+    for (const c of [this.cvCtx, this.bigCtx]) { c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high'; }
     this.cvCtx.drawImage(canvas, 0, 0, 160, 120);
-    A.cv = analyzeCV(this.cvCtx.getImageData(0, 0, 160, 120).data, 160, 120);
+    this.bigCtx.drawImage(canvas, 0, 0, 320, 240);
+    A.cv = analyzeCV(this.cvCtx.getImageData(0, 0, 160, 120).data, 160, 120, { rgba: this.bigCtx.getImageData(0, 0, 320, 240).data, w: 320, h: 240 });
     A.ms.cv = A.cv.ms;
     const on = (id) => enabled.includes(id) && this.ready(id);
     const time = (key, f) => { const t = performance.now(); const r = f(); A.ms[key] = performance.now() - t; return r; };

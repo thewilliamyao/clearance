@@ -2,6 +2,7 @@
 // it. Each judge gets the analysis A of one exposure and returns
 //   { ok, score 0..1, why (shown when it fails), marks (what to highlight on the print) }.
 import { dot, unpackEmb } from '../vision/clip.js';
+import { inFocus } from '../vision/cv.js';
 
 const pct = (v) => `${Math.round(v * 100)}%`;
 const n2 = (v) => v.toFixed(2).replace(/^0/, '');
@@ -31,11 +32,19 @@ function color(name, need = 0.08) {
   };
 }
 
+// FORM: a shape whose centre is inside the brackets. Rectangles come from the edge finder
+// (any rectangle: a book, a screen, a door, seen at an angle too); circles and triangles from
+// the blob finder, which wants a plain shape on a plain ground.
 function shape(kind, word) {
+  const need = kind === 'rect' ? 0.6 : 0.55;
   return (A) => {
-    const s = A.cv.shapes.find((x) => x.kind === kind);
-    if (!s) return { ok: false, score: 0, why: `NO CLEAN ${word} · FRAME ONE SHAPE ON A PLAIN GROUND` };
-    return { ok: s.score >= 0.55, score: s.score, why: '', marks: [{ t: 'shape', shape: s }] };
+    const all = A.cv.shapes.filter((x) => x.kind === kind);
+    const s = all.filter((x) => inFocus(x)).sort((a, b) => b.score - a.score || b.area - a.area)[0];
+    if (!s) {
+      const why = all.length ? `${word} OUTSIDE THE BRACKETS` : kind === 'rect' ? 'NO RECTANGLE · GET ALL FOUR SIDES IN THE FRAME' : `NO CLEAN ${word} · FRAME ONE SHAPE ON A PLAIN GROUND`;
+      return { ok: false, score: 0, why, marks: [] };
+    }
+    return { ok: s.score >= need, score: s.score, why: `${word} ${n2(s.score)} · NEED ${n2(need)}`, marks: [{ t: 'shape', shape: s }] };
   };
 }
 
@@ -116,11 +125,11 @@ export const REQUESTS = {
   },
   light: {
     text: 'A SOURCE OF LIGHT', mod: 'form', merit: 15,
-    judge: (A) => ({ ok: A.cv.light.ok, score: A.cv.light.score, why: A.cv.light.frac < 0.003 ? 'NO LIGHT SOURCE IN FRAME' : 'TOO MUCH LIGHT · FRAME A LAMP IN THE DARK', marks: [{ t: 'light' }] }),
+    judge: (A) => ({ ok: A.cv.light.ok, score: A.cv.light.score, why: A.cv.light.ok ? 'LIGHT SOURCE IN FRAME' : A.cv.light.frac < 0.003 ? 'NO LIGHT SOURCE IN FRAME' : 'TOO MUCH LIGHT · FRAME A LAMP IN THE DARK', marks: [{ t: 'light' }] }),
   },
   nothing: {
     text: 'NOTHING', mod: 'form', merit: 5,
-    judge: (A) => ({ ok: A.cv.blank.score >= 0.55, score: A.cv.blank.score, why: 'SOMETHING IS IN THE FRAME', marks: [] }),
+    judge: (A) => ({ ok: A.cv.blank.score >= 0.55, score: A.cv.blank.score, why: A.cv.blank.score >= 0.55 ? 'NOTHING IN FRAME' : 'SOMETHING IS IN THE FRAME', marks: [] }),
   },
 
   // INVENTORY (shift 2)
@@ -231,6 +240,21 @@ export const REQUESTS = {
   },
 };
 
+// What the live viewfinder looks for while a request is selected: which INVENTORY boxes to
+// draw (with TRACKING) and whether face brackets matter. Everything else is left out: the
+// unit looks for one thing at a time.
+const LOOK = {
+  animal: ANIMALS, chair: ['chair', 'couch', 'bench'], cup: ['cup', 'bottle', 'wine glass', 'bowl', 'vase'], plant: ['potted plant'], book: ['book'],
+  screen: ['tv', 'laptop', 'cell phone'], vehicle: VEHICLES, bag: BAGS, street: STREET, food: FOOD, clock: ['clock'],
+  person: ['person'], two: ['person'], crowd: ['person'], far: ['person'], unaware: ['person'],
+  withbag: ['person', ...BAGS], onphone: ['person', 'cell phone'], withanimal: ['person', ...ANIMALS],
+};
+const PEOPLE = new Set(['person', 'two', 'crowd', 'far', 'unaware', 'withbag', 'onphone', 'withanimal', 'alone', 'waiting', 'hurry', 'tired', 'notbelong', 'seen', 'self']);
+export function lookFor(key) {
+  const def = REQUESTS[key];
+  return { labels: LOOK[key] || null, faces: PEOPLE.has(key) || ['faces', 'affect'].includes(def.mod), live: ['chroma', 'form'].includes(def.mod) };
+}
+
 export function requestText(req) {
   const def = REQUESTS[req.key];
   return def.dynamic ? `${def.text}${String(req.arg).padStart(3, '0')} AGAIN` : def.text;
@@ -243,17 +267,14 @@ export function requestShort(req) {
   return def.dynamic ? `${def.short}${String(req.arg).padStart(3, '0')} AGAIN` : def.short;
 }
 
-// Judge one exposure against the open requests. The focused request wins if it matches.
-export function judgeAll(A, requests, focusIdx, ctx) {
-  const results = requests.map((r, i) => {
-    if (r.done) return null;
-    const def = REQUESTS[r.key];
-    let res;
-    try { res = def.judge(A, { ...ctx, arg: r.arg }); } catch (e) { console.error(e); res = { ok: false, score: 0, why: 'MODULE FAULT' }; }
-    return { i, req: r, def, ...res };
-  });
-  const ok = results.filter((r) => r && r.ok);
-  const focus = results[focusIdx];
-  let pick = focus && focus.ok ? focus : ok.sort((a, b) => b.def.merit - a.def.merit || b.score - a.score)[0] || null;
-  return { pick, focus, results };
+// Judge one exposure against the request the Recorder has selected, and only that one: the
+// unit looks for one thing at a time. pick is set when the photo meets it.
+export function judgeSelected(A, requests, sel, ctx) {
+  const r = requests[sel];
+  if (!r || r.done) return { pick: null, focus: null };
+  const def = REQUESTS[r.key];
+  let res;
+  try { res = def.judge(A, { ...ctx, arg: r.arg }); } catch (e) { console.error(e); res = { ok: false, score: 0, why: 'MODULE FAULT' }; }
+  const focus = { i: sel, req: r, def, ...res };
+  return { pick: focus.ok ? focus : null, focus };
 }

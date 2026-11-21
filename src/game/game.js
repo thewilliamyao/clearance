@@ -4,7 +4,7 @@ import { THEMES, themeColors, STAMP } from '../engine/palette.js';
 import { Developer } from '../engine/develop.js';
 import { SENSORS, TONES, LENSES, FILMS, SENSOR_BONUS } from './tiers.js';
 import { DAYS, LAST_DAY, issuedBy, makeOrder, seeded } from './days.js';
-import { REQUESTS, judgeAll, requestText } from './requests.js';
+import { REQUESTS, judgeSelected, requestText } from './requests.js';
 import { loadSave, writeSave, defaultSave, PhotoStore } from './save.js';
 import { Modules } from '../vision/modules.js';
 import { packEmb } from '../vision/clip.js';
@@ -215,7 +215,7 @@ export class Game {
     let verdict;
     if (o && this.stateName !== 'lab') {
       const focus = Math.max(0, Math.min(o.requests.length - 1, this.screens.field.focus));
-      verdict = judgeAll(A, o.requests, focus, ctx);
+      verdict = judgeSelected(A, o.requests, focus, ctx);
       const pick = verdict.pick;
       if (pick) {
         const quality = Math.max(0, Math.min(1, (pick.score - 0.5) / 0.5));

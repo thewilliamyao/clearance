@@ -5,10 +5,22 @@ import { fitText } from '../engine/font.js';
 import { desk, paper, rule, seal, header, stamp, list, notice, bar, dim, hints, drawText, textWidth, wrapText, LINE_H } from './ui.js';
 import { SENSORS, TONES, LENSES, FILMS } from './tiers.js';
 import { DAYS, LAST_DAY, RECORDER } from './days.js';
-import { REQUESTS, requestText, requestShort } from './requests.js';
+import { REQUESTS, requestText, requestShort, lookFor } from './requests.js';
 import { SHOP } from './game.js';
 import { MODULES, MODULE_ORDER, RUNTIME_MB } from '../vision/modules.js';
 import { analyzeCV, FOCUS } from '../vision/cv.js';
+
+// Live checks for the plain-code requests: what analyzeCV needs to compute for each.
+const LIVE_NEED = { red: ['color'], blue: ['color'], green: ['color'], yellow: ['color'], rect: ['rects'], circle: ['blobs'], triangle: ['blobs'], sym: ['sym'], light: ['light'], nothing: ['blank'] };
+function halve(rgba, w, h) {
+  const sw = w >> 1, sh = h >> 1, out = new Uint8ClampedArray(sw * sh * 4);
+  for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++) {
+    const o = (y * sw + x) * 4, a = (2 * y * w + 2 * x) * 4, b = a + 4, c = a + w * 4, d = c + 4;
+    for (let k = 0; k < 3; k++) out[o + k] = (rgba[a + k] + rgba[b + k] + rgba[c + k] + rgba[d + k]) >> 2;
+    out[o + 3] = 255;
+  }
+  return out;
+}
 
 const MARK_RGB = { red: '#c63a2c', orange: '#d9822b', yellow: '#e2c23a', green: '#3f9a4f', blue: '#3b6fd1', purple: '#7d4fb3', pink: '#d46a9b', white: '#f2f2ee', gray: '#8a8a8a', black: '#111111' };
 const pad3 = (n) => String(n).padStart(3, '0');
@@ -176,14 +188,15 @@ export class Order {
 // pops up a bubble offering to end the shift.
 const ZOOMS = [1, 1.5, 2, 3, 4];
 export class Viewfinder {
-  constructor(g) { this.g = g; this.focus = 0; this.zoom = 1; this.hintT = 0; this.zoomT = 0; this.bubble = null; }
+  constructor(g) { this.g = g; this.focus = 0; this.zoom = 1; this.hintT = 0; this.zoomT = 0; this.bubble = null; this.live = null; this.liveT = 0; }
   enter(arg, prev) {
     const g = this.g;
     this.zoom = Math.min(this.zoom, g.maxZoom);
     this.fixFocus(0);
     this.bubble = null;
+    this.live = null; this.liveT = 0.15;
     if (arg === 'quota' && g.order && !g.order.closed) this.popBubble('quota');
-    if (prev === 'order' && g.day === 1 && !g.order.shots) this.hintT = 7;
+    this.hintT = prev === 'order' && g.day === 1 && !g.order.shots ? 7 : 0; // first shift only
     if (g.day === LAST_DAY && g.save.selfMisses >= 2) g.toast(g.save.selfMisses >= 4 ? 'TURN THE UNIT AROUND.' : 'HINT: THE RECORDER IS HOLDING THE UNIT.', 4);
     g.installModules();
     g.wake();
@@ -208,8 +221,9 @@ export class Viewfinder {
     this.zoomT = Math.max(0, this.zoomT - dt);
     g.updateTracking();
     if (this.bubble) return this.updateBubble(dt);
-    if (i.hit('UP')) { this.fixFocus(-1); g.sfx.move(); }
-    if (i.hit('DOWN')) { this.fixFocus(1); g.sfx.move(); }
+    this.scan(dt);
+    if (i.hit('UP')) { this.fixFocus(-1); this.live = null; this.liveT = 0.05; g.sfx.move(); }
+    if (i.hit('DOWN')) { this.fixFocus(1); this.live = null; this.liveT = 0.05; g.sfx.move(); }
     if (i.hit('LEFT') || i.hit('RIGHT')) {
       if (g.maxZoom <= 1) { g.toast('LENS I HAS NO ZOOM · REQUISITION LENS II'); g.sfx.deny(); }
       else {
@@ -223,6 +237,22 @@ export class Viewfinder {
     if (i.hit('OK')) { g.save.settings.hud = (g.save.settings.hud + 1) % 2; g.persist(); g.sfx.blip(); }
     if (i.hit('SELECT')) { g.scr.snapshot(); g.sfx.blip(); return g.go('menu'); }
     if (i.hit('SHUTTER') || (i.tapped && g.save.settings.tapShoot)) this.shoot();
+  }
+  // The selected request: what to look for, and (for the plain-code checks) its own judge run
+  // on the live picture a few times a second, so the Recorder sees what the unit sees.
+  selected() { const o = this.g.order, r = o && o.requests[this.focus]; return r && !r.done ? r : null; }
+  scan(dt) {
+    const g = this.g, r = this.selected();
+    this.liveT -= dt;
+    if (this.liveT > 0) return;
+    this.liveT = 0.25;
+    if (!r || !LIVE_NEED[r.key] || !g.lastFrame || !g.camera.ready) { this.live = null; return; }
+    try {
+      const big = g.lastFrame, small = halve(big, W, H);
+      const cv = analyzeCV(small, W / 2, H / 2, { rgba: big, w: W, h: H }, LIVE_NEED[r.key]);
+      const v = REQUESTS[r.key].judge({ cv }, {});
+      this.live = { key: r.key, ok: v.ok, why: v.why, marks: v.marks || [], score: v.score, cv };
+    } catch (e) { console.warn('live check', e); this.live = null; }
   }
   // The bubble: END SHIFT or KEEP SHOOTING. SELECT or the shutter also keeps shooting.
   updateBubble(dt) {
@@ -253,9 +283,11 @@ export class Viewfinder {
   draw() {
     const g = this.g, scr = g.scr, P = g.P;
     g.renderLive(this.zoom);
-    // Live tracking.
-    g.track.objects.slice(0, 8).forEach((ob) => { if (ob.score < 0.4) return; const [x, y, w, h] = box(ob.box); shadowRect(scr, x, y, w, h, P, true); tag(scr, ob.label.toUpperCase(), x, y, P.ink, P.paper); });
-    g.track.faces.slice(0, 6).forEach((f, k) => { const [x, y, w, h] = box(f.box); shadowBrackets(scr, x, y, w, h, P, 6); tag(scr, `SUBJ ${String(k + 1).padStart(2, '0')}`, x, y, P.paper, P.ink); });
+    // Live tracking, only for what the selected request is about.
+    const sel = this.selected(), look = sel ? lookFor(sel.key) : { labels: null, faces: true };
+    if (look.labels) g.track.objects.filter((ob) => look.labels.includes(ob.label)).slice(0, 8).forEach((ob) => { if (ob.score < 0.4) return; const [x, y, w, h] = box(ob.box); shadowRect(scr, x, y, w, h, P, true); tag(scr, ob.label.toUpperCase(), x, y, P.ink, P.paper); });
+    if (look.faces) g.track.faces.slice(0, 6).forEach((f, k) => { const [x, y, w, h] = box(f.box); shadowBrackets(scr, x, y, w, h, P, 6); tag(scr, `SUBJ ${String(k + 1).padStart(2, '0')}`, x, y, P.paper, P.ink); });
+    if (this.live && sel && this.live.key === sel.key) this.drawLiveMarks();
     // Focus brackets.
     const fx = FOCUS.x0 * W, fy = FOCUS.y0 * H, fw = (FOCUS.x1 - FOCUS.x0) * W, fh = (FOCUS.y1 - FOCUS.y0) * H;
     shadowBrackets(scr, fx, fy, fw, fh, P, 10);
@@ -284,7 +316,23 @@ export class Viewfinder {
     if (this.zoom > 1) drawText(scr, `${this.zoom}×`, x - 2, H - 9, P.paper, { align: 'right' });
     if (!this.bubble && g.track.faces.length && blink(g.t, 1.2)) scr.disc(W - 6, 6, 2, P.stamp);
   }
+  // What the live check found, drawn thin in the Office's red: the shape outline or the
+  // symmetry axis. (The colour count and the verdict are on the line under the task list.)
+  drawLiveMarks() {
+    const scr = this.g.scr, red = this.g.P.stamp;
+    for (const m of this.live.marks) {
+      if (m.t === 'shape') {
+        const pts = m.shape.hull.map(([x, y]) => [Math.round(x * W), Math.round(y * H)]);
+        scr.poly(pts, red, this.live.ok ? undefined : [3, 2]);
+        if (this.live.ok) scr.poly(pts.map(([x, y]) => [x + 1, y]), red);
+      } else if (m.t === 'axis' && this.live.cv.sym.score > 0.5) {
+        const x = Math.round(m.x * W);
+        scr.line(x, 14, x, H - 14, red, [4, 3]);
+      }
+    }
+  }
   // Every request of the work order, top left: □ open, ▸ the one you're aiming at, ✓ filed.
+  // Under it, the live reading for the selected one.
   tasks() {
     const g = this.g, scr = g.scr, P = g.P, o = g.order;
     if (!o) { drawText(scr, 'NO WORK ORDER', 4, 3, P.paper, { bg: P.ink, pad: 2 }); return; }
@@ -304,6 +352,11 @@ export class Viewfinder {
       const tw = drawText(scr, labels[k], x + 14, ry, fg);
       if (r.done) scr.hline(x + 13, x + 14 + tw, ry + 3, P.mid);
     });
+    const sel = this.selected(), lv = this.live;
+    if (sel && lv && lv.key === sel.key) {
+      const text = fitText(lv.ok ? `✓ ${lv.why.split(' · ')[0]} · SHOOT` : lv.why, W - 8);
+      drawText(scr, text, x + 2, y + h + 3, lv.ok ? P.paper : P.paper, { bg: lv.ok ? P.stamp : P.ink, pad: 2 });
+    }
   }
   // W ──●── T, while zooming.
   zoomBar() {
@@ -847,7 +900,7 @@ export class Lab {
       if (page === 'CHROMA + FORM' && g.lastFrame && (!this.cvT || g.t - this.cvT > 0.15)) {
         this.cvT = g.t;
         const small = shrinkRGBA(g.lastFrame, W, H, 2);
-        this.res.cv = time('cv', () => analyzeCV(small, 160, 120));
+        this.res.cv = time('cv', () => analyzeCV(small, 160, 120, { rgba: g.lastFrame, w: W, h: H }));
       }
       if (page === 'INTENT' && m.ready('intent') && !this.clipBusy) {
         this.clipBusy = true;
@@ -867,7 +920,12 @@ export class Lab {
     const c = g.cap;
     const small = document.createElement('canvas'); small.width = 160; small.height = 120;
     const sctx = small.getContext('2d', { willReadFrequently: true });
-    await runs('CHROMA+FORM', () => { sctx.drawImage(c, 0, 0, 160, 120); analyzeCV(sctx.getImageData(0, 0, 160, 120).data, 160, 120); });
+    const big = document.createElement('canvas'); big.width = 320; big.height = 240;
+    const bctx = big.getContext('2d', { willReadFrequently: true });
+    await runs('CHROMA+FORM', () => {
+      sctx.drawImage(c, 0, 0, 160, 120); bctx.drawImage(c, 0, 0, 320, 240);
+      analyzeCV(sctx.getImageData(0, 0, 160, 120).data, 160, 120, { rgba: bctx.getImageData(0, 0, 320, 240).data, w: 320, h: 240 });
+    });
     if (m.ready('objects')) await runs('INVENTORY', () => m.mp.detectObjects(c, 640, 480));
     if (m.ready('faces')) await runs('CENSUS', () => m.mp.detectFaces(c, 640, 480));
     if (m.ready('affect')) await runs('SENTIMENT', () => m.mp.detectAffect(c));
