@@ -3,60 +3,127 @@
 // (data/prompt-embeddings.json), so the phone only ever runs the small image encoder.
 // After editing this file: cd tools && npm run embed
 
-// Plain scene descriptions. They are the "nothing special" side of every zero-shot test:
-// a concept only counts when it beats all of these.
-export const GENERIC = [
-  'a photo of a street', 'a photo of a sidewalk', 'a photo of a building', 'a photo of a room',
-  'a photo of a wall', 'a photo of a floor', 'a photo of a ceiling', 'a photo of the sky',
-  'a photo of a tree', 'a photo of a car', 'a photo of a table', 'a photo of a chair',
-  'a photo of a desk', 'a photo of a window', 'a photo of a door', 'a photo of a person',
-  'a photo of a man', 'a photo of a woman', 'a photo of people walking', 'a photo of a face',
-  'a photo of a hand', 'a photo of an object', 'a photo of a screen', 'a photo of a phone',
-  'a photo of a bag', 'a photo of food', 'a photo of a plant', 'a photo of a sign',
-  'a blurry photo', 'a dark photo',
-];
-
-// Abstract requests. pos = what the Office asked for; neg = its opposites.
+// Abstract requests (INTENT, shifts 5-6). Each pair is the concept and the same words without
+// it ("a photo of a sad person" / "a photo of a person"). A photo scores by how much more it
+// matches the first, so only the concept counts, not what is literally in the picture; the
+// best pair counts, so a closet and the space under a bed are both places to hide.
+// opp: opposites, with what the Office calls them (a smile is not sadness): if one beats the
+// concept, the photo is not filed. person: someone must be in frame. place: a face filling
+// the frame is not a place. The bars are in data/intent-bars.json, made by
+// tools/test/intent-bench.mjs calibrate.
+// (Until Nov 21 2026 a concept had to win a softmax against 30 plain descriptions such as
+// "a photo of a man"; those always win on real phone photos, so almost nothing was filed.)
 export const CONCEPTS = {
   sadness: {
-    pos: ['a photo of a sad person', 'a photo of a person crying', 'a sad and gloomy scene', 'a person looking down, feeling sad'],
-    neg: ['a photo of a happy person', 'a photo of a person smiling', 'a cheerful and bright scene'],
-  },
-  alone: {
-    pos: ['a photo of a person alone', 'a single person by themselves', 'a lonely person sitting alone'],
-    neg: ['a photo of a group of people', 'a photo of two people talking', 'a photo of a crowd', 'an empty place with no people'],
+    pairs: [
+      ['a photo of a sad person', 'a photo of a person'],
+      ['a photo of a person crying', 'a photo of a person'],
+      ['a sad and gloomy scene', 'a scene'],
+      ['a person looking down, feeling sad', 'a person looking down'],
+      ['a person with their head in their hands', 'a person'],
+      ['a grey, gloomy day', 'a day'],
+      ['a dark, empty, lonely room', 'a room'],
+    ],
+    opp: [
+      ['a photo of a happy person', 'a photo of a person', 'A HAPPY PERSON'],
+      ['a photo of a person smiling', 'a photo of a person', 'A SMILE'],
+      ['a cheerful and bright scene', 'a scene', 'A CHEERFUL SCENE'],
+    ],
   },
   waiting: {
-    pos: ['a person waiting', 'a person standing and waiting', 'a person waiting for a bus or a train', 'a person sitting and waiting'],
-    neg: ['a person walking', 'a person running', 'a person working'],
+    person: true,
+    pairs: [
+      ['a person waiting', 'a person'],
+      ['a person standing and waiting', 'a person standing'],
+      ['a person sitting and waiting', 'a person sitting'],
+      ['a person waiting for a bus or a train', 'a person on a bus or a train'],
+      ['a bored person waiting', 'a person'],
+    ],
+    opp: [
+      ['a person walking', 'a person', 'SOMEONE WALKING'],
+      ['a person running', 'a person', 'SOMEONE RUNNING'],
+      ['a person dancing', 'a person', 'SOMEONE DANCING'],
+    ],
   },
   hurry: {
-    pos: ['a person in a hurry', 'a person rushing down the street', 'a person running', 'a motion-blurred person walking fast'],
-    neg: ['a person standing still', 'a person sitting down', 'a person waiting'],
+    person: true,
+    pairs: [
+      ['a person in a hurry', 'a person'],
+      ['a person rushing', 'a person'],
+      ['a person running', 'a person'],
+      ['a person walking fast', 'a person walking'],
+      ['a motion-blurred person', 'a person'],
+    ],
+    opp: [
+      ['a person standing still', 'a person', 'SOMEONE STANDING STILL'],
+      ['a person sitting down', 'a person', 'SOMEONE SITTING DOWN'],
+    ],
   },
   tired: {
-    pos: ['a tired person', 'an exhausted person', 'a person yawning', 'a person sleeping'],
-    neg: ['an energetic person', 'a happy, alert person'],
-  },
-  outofplace: {
-    pos: ['an object that is out of place', 'something strange that does not belong here', 'an unusual object in an ordinary place', 'a weird thing'],
-    neg: [],
+    person: true,
+    pairs: [
+      ['a tired person', 'a person'],
+      ['an exhausted person', 'a person'],
+      ['a person yawning', 'a person'],
+      ['a person sleeping', 'a person'],
+      ['a person lying down, worn out', 'a person lying down'],
+    ],
+    opp: [
+      ['an energetic person', 'a person', 'AN ENERGETIC PERSON'],
+      ['a happy, alert person', 'a person', 'AN ALERT PERSON'],
+    ],
   },
   notbelong: {
-    pos: ['a person who looks out of place', 'a stranger who does not fit in here', 'a person who looks lost', 'an unusual looking person'],
-    neg: ['a person who fits in', 'an ordinary person in an ordinary place'],
+    person: true,
+    pairs: [
+      ['a person who looks out of place', 'a person'],
+      ['a person who looks lost', 'a person'],
+      ['an unusual looking person', 'a person'],
+      ['a stranger who does not fit in here', 'a stranger'],
+      ['a person in a strange costume', 'a person'],
+    ],
   },
   suspicious: {
-    pos: ['something suspicious', 'a suspicious person', 'a suspicious package left alone', 'a person hiding something'],
-    neg: ['an ordinary object', 'an ordinary person'],
-  },
-  abandoned: {
-    pos: ['an abandoned object', 'something left behind', 'a lost item on the ground', 'an abandoned, empty place'],
-    neg: ['an object being used', 'a clean, tidy place'],
+    pairs: [
+      ['something suspicious', 'something'],
+      ['a suspicious person', 'a person'],
+      ['a suspicious package left alone', 'a package'],
+      ['a person hiding something', 'a person'],
+      ['a person wearing a hood and a mask', 'a person'],
+      ['a bag left on the ground', 'the ground'],
+      ['a person peeking around a corner', 'a person'],
+    ],
   },
   hiding: {
-    pos: ['a hiding place', 'a dark corner', 'a place where someone could hide', 'a narrow, dark alley'],
-    neg: ['an open, bright space', 'a well lit room'],
+    place: true,
+    pairs: [
+      ['a hiding place', 'a place'],
+      ['a dark corner', 'a corner'],
+      ['a place where someone could hide', 'a place'],
+      ['a narrow, dark alley', 'an alley'],
+      ['the dark space under a bed', 'a bed'],
+      ['inside a dark closet', 'a room'],
+      ['behind a curtain', 'a curtain'],
+      ['under a table', 'a table'],
+    ],
+  },
+  outofplace: {
+    place: true,
+    pairs: [
+      ['an object that is out of place', 'an object'],
+      ['something strange that does not belong here', 'something'],
+      ['an unusual object in an ordinary place', 'an object in an ordinary place'],
+      ['a weird thing', 'a thing'],
+    ],
+  },
+  abandoned: {
+    place: true,
+    pairs: [
+      ['an abandoned object', 'an object'],
+      ['something left behind', 'something'],
+      ['a lost item on the ground', 'an item on the ground'],
+      ['an abandoned, empty place', 'an empty place'],
+    ],
   },
 };
 
@@ -94,8 +161,8 @@ export const LABELS = [
 export const labelPrompt = (l) => `a photo of ${l}`;
 
 export function allPrompts() {
-  const set = new Set(GENERIC);
-  for (const c of Object.values(CONCEPTS)) { c.pos.forEach((p) => set.add(p)); c.neg.forEach((p) => set.add(p)); }
+  const set = new Set();
+  for (const c of Object.values(CONCEPTS)) for (const pr of [...c.pairs, ...(c.opp || [])]) { set.add(pr[0]); set.add(pr[1]); }
   for (const list of Object.values(PROFILE)) list.forEach((p) => set.add(p));
   LABELS.forEach((l) => set.add(labelPrompt(l)));
   return [...set];

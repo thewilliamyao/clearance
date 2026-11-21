@@ -2,13 +2,13 @@
 // Text prompts were embedded ahead of time (data/prompt-embeddings.json), so judging a photo
 // is one image-encoder pass plus a few hundred dot products.
 import { assetUrl, fetchBytes } from '../config.js';
-import { GENERIC, CONCEPTS, PROFILE, LABELS, labelPrompt } from '../data/prompts.js';
+import { CONCEPTS, PROFILE, LABELS, labelPrompt } from '../data/prompts.js';
 
 const SIZE = 256;
 
 export class Clip {
-  constructor() { this.ort = null; this.session = null; this.bank = null; this.canvas = null; }
-  get ready() { return !!(this.session && this.bank); }
+  constructor() { this.ort = null; this.session = null; this.bank = null; this.bars = null; this.canvas = null; }
+  get ready() { return !!(this.session && this.bank && this.bars); }
 
   async load(onProgress) {
     const ortUrl = await assetUrl('ort');
@@ -18,6 +18,7 @@ export class Clip {
     const bytes = await fetchBytes('clip', (p) => onProgress && onProgress(p * 0.9));
     this.session = await this.ort.InferenceSession.create(bytes, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' });
     this.bank = await loadBank();
+    this.bars = await loadJson('../../data/intent-bars.json');
     if (onProgress) onProgress(1);
   }
 
@@ -53,15 +54,18 @@ export class Clip {
     return v;
   }
 
-  // Probability that the photo shows the concept, against its opposites and plain scenes.
+  // How strongly the photo shows a concept. For each pair: how much more the photo matches the
+  // concept than the same words without it (cosine difference); the best pair counts. p ranks
+  // that among ordinary photos (data/intent-bars.json): 0.7 = more than 70% of them.
+  // opp: an opposite (a smile for sadness) matched better than the concept did.
   concept(emb, id) {
     const c = CONCEPTS[id];
-    const texts = [...c.pos, ...c.neg, ...GENERIC.filter((g) => !c.pos.includes(g))];
-    const logits = texts.map((t) => 100 * dot(emb, this.vec(t)));
-    const p = softmax(logits);
-    let pos = 0, best = 0, bestText = c.pos[0];
-    for (let i = 0; i < c.pos.length; i++) { pos += p[i]; if (p[i] > best) { best = p[i]; bestText = c.pos[i]; } }
-    return { p: pos, best: bestText };
+    const delta = (pr) => dot(emb, this.vec(pr[0])) - dot(emb, this.vec(pr[1]));
+    let d = -1, best = c.pairs[0][0];
+    for (const pr of c.pairs) { const x = delta(pr); if (x > d) { d = x; best = pr[0]; } }
+    let od = -1, opp = null;
+    for (const pr of c.opp || []) { const x = delta(pr); if (x > od) { od = x; opp = pr[2]; } }
+    return { p: rankIn(d, this.bars && this.bars.q[id]), d, best, opp: od > d ? opp : null };
   }
 
   // The profile: a softmax over attributes. The model always has an opinion.
@@ -79,10 +83,14 @@ export class Clip {
   }
 }
 
+async function loadJson(rel) {
+  const res = await fetch(new URL(rel, import.meta.url));
+  if (!res.ok) throw new Error(`${rel} missing`);
+  return res.json();
+}
+
 async function loadBank() {
-  const res = await fetch(new URL('../../data/prompt-embeddings.json', import.meta.url));
-  if (!res.ok) throw new Error('prompt embeddings missing');
-  const j = await res.json();
+  const j = await loadJson('../../data/prompt-embeddings.json');
   const bank = new Map();
   for (const [text, scale, b64] of j.items) {
     const bin = atob(b64), v = new Float32Array(bin.length);
@@ -90,6 +98,17 @@ async function loadBank() {
     bank.set(text, normalize(v));
   }
   return bank;
+}
+
+// Where x falls among the calibration photos' scores (q: ascending quantiles, 0..1).
+export function rankIn(x, q) {
+  if (!q || !q.length) return 0;
+  const n = q.length - 1;
+  if (x <= q[0]) return 0;
+  if (x >= q[n]) return 1;
+  let i = 0;
+  while (i < n - 1 && x >= q[i + 1]) i++;
+  return (i + (x - q[i]) / ((q[i + 1] - q[i]) || 1)) / n;
 }
 
 export function dot(a, b) { let s = 0; for (let i = 0; i < a.length; i++) s += a[i] * b[i]; return s; }

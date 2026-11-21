@@ -3,6 +3,7 @@
 //   { ok, score 0..1, why (shown when it fails), marks (what to highlight on the print) }.
 import { dot, unpackEmb } from '../vision/clip.js';
 import { inFocus } from '../vision/cv.js';
+import { CONCEPTS } from '../data/prompts.js';
 
 const pct = (v) => `${Math.round(v * 100)}%`;
 const n2 = (v) => v.toFixed(2).replace(/^0/, '');
@@ -87,19 +88,42 @@ function face(test, why) {
   };
 }
 
-// INTENT: zero-shot against the concept's prompts.
-// Calibrated on test photos: plain rooms and portraits score near 0 on every concept, a
-// pensive turned-away portrait 0.36 on sadness. "SOMEONE ..." requests also need a person.
-function concept(id, need = 0.4, person = false) {
+// INTENT: the Office's abstract requests (pairs of prompts in data/prompts.js). CONFIDENCE is
+// where the photo ranks among ordinary photos on that concept: 70% = more SUSPICIOUS than 70%
+// of them (data/intent-bars.json, from 351 everyday photos: vlog frames, rooms, portraits).
+// A deliberate attempt usually lands well above that; about 3 in 10 everyday photos pass too,
+// which suits the Office. "SOMEONE ..." requests also need a person.
+export const INTENT_NEED = 0.7;
+const closeFace = (A) => (A.faces || []).some((f) => f.box[2] * f.box[3] > 0.1);
+function concept(id) {
+  const c = CONCEPTS[id];
   return (A, ctx) => {
     if (!A.emb) return { ok: false, score: 0, why: 'INTENT MODULE NOT INSTALLED' };
-    if (person && A.objects && !people(A, 0.35).length && !(A.faces && A.faces.length)) return { ok: false, score: 0, why: 'NO SUBJECT ON RECORD' };
+    if (c.person && A.objects && !people(A, 0.35).length && !(A.faces && A.faces.length)) return { ok: false, score: 0, why: 'NO SUBJECT ON RECORD' };
+    if (c.place && closeFace(A)) return { ok: false, score: 0, why: 'A FACE IS NOT A PLACE · STEP BACK' };
     const r = ctx.clip.concept(A.emb, id);
-    return { ok: r.p >= need, score: Math.min(1, r.p / need / 1.5), why: `CONFIDENCE ${pct(r.p)} · NEED ${pct(need)}`, marks: [{ t: 'intent', p: r.p, text: r.best }], p: r.p };
+    const marks = [{ t: 'intent', p: r.p, text: r.best }];
+    if (r.p >= INTENT_NEED && r.opp) return { ok: false, score: 0, why: `THE MODEL SEES ${r.opp} INSTEAD`, marks, p: r.p };
+    return { ok: r.p >= INTENT_NEED, score: r.p, why: `CONFIDENCE ${pct(r.p)} · NEED ${pct(INTENT_NEED)}`, marks, p: r.p };
   };
 }
 
-// CONTINUITY: compare with exposures already on file.
+// SOMEONE ALONE: one person in frame and no one else (INVENTORY and CENSUS count them).
+function alone(A) {
+  const ps = people(A, 0.35), fs = A.faces || [];
+  const n = Math.max(ps.length, fs.length);
+  if (!n) return { ok: false, score: 0, why: 'NO SUBJECT ON RECORD' };
+  const marks = ps.length ? ps.map((o) => boxMark(o, 'SUBJECT')) : fs.map((f) => ({ t: 'face', box: f.box, label: 'SUBJECT' }));
+  if (n > 1) return { ok: false, score: 0, why: `${n} SUBJECTS IN FRAME · NEED ONE, ALONE`, marks };
+  marks[0].label = 'ALONE';
+  return { ok: true, score: 0.8, why: 'ONE SUBJECT · NO ONE ELSE ON RECORD', marks };
+}
+
+// CONTINUITY: compare with exposures already on file (image embeddings, cosine).
+// Measured on pairs of vlog frames (Nov 21 2026): the same scene 3 s apart reaches
+// 0.72 84% of the time, the same person or place at another moment of the same video 60%,
+// frames from different videos 1.7%. (The first bars, 0.80 and 0.78, passed 33% of the second.)
+const SAME = 0.72;
 function bestMatch(A, photos, filter) {
   let best = { sim: -1, photo: null };
   for (const ph of photos) {
@@ -178,16 +202,16 @@ export const REQUESTS = {
   surprise: { text: 'SOMEONE SURPRISED', mod: 'affect', merit: 50, judge: face((f) => f.read.SURPRISE * 1.25, (f) => `SURPRISE ${pct(f.read.SURPRISE)} · NEED 40%`) },
 
   // INTENT (shift 5)
-  sadness: { text: 'SADNESS', mod: 'intent', merit: 50, judge: concept('sadness', 0.33) },
-  alone: { text: 'SOMEONE ALONE', mod: 'intent', merit: 45, judge: concept('alone', 0.35, true) },
-  waiting: { text: 'SOMEONE WAITING', mod: 'intent', merit: 45, judge: concept('waiting', 0.35, true) },
-  hurry: { text: 'SOMEONE IN A HURRY', mod: 'intent', merit: 50, judge: concept('hurry', 0.35, true) },
-  tired: { text: 'SOMEONE TIRED', mod: 'intent', merit: 50, judge: concept('tired', 0.33, true) },
-  outofplace: { text: 'SOMETHING THAT DOES NOT BELONG', short: 'SOMETHING OUT OF PLACE', mod: 'intent', merit: 55, judge: concept('outofplace', 0.35) },
-  notbelong: { text: 'SOMEONE WHO DOES NOT BELONG', mod: 'intent', merit: 60, judge: concept('notbelong', 0.33, true) },
-  suspicious: { text: 'SOMETHING SUSPICIOUS', mod: 'intent', merit: 55, judge: concept('suspicious', 0.35) },
-  abandoned: { text: 'SOMETHING ABANDONED', mod: 'intent', merit: 45, judge: concept('abandoned', 0.4) },
-  hiding: { text: 'A PLACE TO HIDE', mod: 'intent', merit: 45, judge: concept('hiding', 0.4) },
+  sadness: { text: 'SADNESS', mod: 'intent', merit: 50, judge: concept('sadness') },
+  alone: { text: 'SOMEONE ALONE', mod: 'intent', merit: 45, judge: alone },
+  waiting: { text: 'SOMEONE WAITING', mod: 'intent', merit: 45, judge: concept('waiting') },
+  hurry: { text: 'SOMEONE IN A HURRY', mod: 'intent', merit: 50, judge: concept('hurry') },
+  tired: { text: 'SOMEONE TIRED', mod: 'intent', merit: 50, judge: concept('tired') },
+  outofplace: { text: 'SOMETHING THAT DOES NOT BELONG', short: 'SOMETHING OUT OF PLACE', mod: 'intent', merit: 55, judge: concept('outofplace') },
+  notbelong: { text: 'SOMEONE WHO DOES NOT BELONG', mod: 'intent', merit: 60, judge: concept('notbelong') },
+  suspicious: { text: 'SOMETHING SUSPICIOUS', mod: 'intent', merit: 55, judge: concept('suspicious') },
+  abandoned: { text: 'SOMETHING ABANDONED', mod: 'intent', merit: 45, judge: concept('abandoned') },
+  hiding: { text: 'A PLACE TO HIDE', mod: 'intent', merit: 45, judge: concept('hiding') },
 
   // CONTINUITY (shift 6)
   again: {
@@ -197,7 +221,7 @@ export const REQUESTS = {
       const ph = ctx.photos.find((p) => p.id === ctx.arg);
       if (!ph || !ph.emb) return { ok: false, score: 0, why: 'EXPOSURE NOT ON FILE' };
       const s = dot(A.emb, unpackEmb(ph.emb));
-      return { ok: s >= 0.8, score: Math.min(1, (s - 0.6) / 0.35), why: `MATCH ${pct(s)} · NEED 80%`, marks: [{ t: 'match', photo: ph.id, sim: s }] };
+      return { ok: s >= SAME, score: Math.min(1, (s - 0.6) / 0.35), why: `MATCH ${pct(s)} · NEED ${pct(SAME)}`, marks: [{ t: 'match', photo: ph.id, sim: s }] };
     },
   },
   place: {
@@ -205,7 +229,7 @@ export const REQUESTS = {
     judge: (A, ctx) => {
       if (!A.emb) return { ok: false, score: 0, why: 'INTENT MODULE NOT INSTALLED' };
       const b = bestMatch(A, ctx.photos);
-      return { ok: b.sim >= 0.78, score: Math.min(1, (b.sim - 0.6) / 0.35), why: `BEST MATCH ${pct(Math.max(0, b.sim))} · NEED 78%`, marks: b.photo ? [{ t: 'match', photo: b.photo.id, sim: b.sim }] : [] };
+      return { ok: b.sim >= SAME, score: Math.min(1, (b.sim - 0.6) / 0.35), why: `BEST MATCH ${pct(Math.max(0, b.sim))} · NEED ${pct(SAME)}`, marks: b.photo ? [{ t: 'match', photo: b.photo.id, sim: b.sim }] : [] };
     },
   },
   seen: {
@@ -214,7 +238,7 @@ export const REQUESTS = {
       if (!A.emb) return { ok: false, score: 0, why: 'INTENT MODULE NOT INSTALLED' };
       if (!people(A).length && !(A.faces && A.faces.length)) return { ok: false, score: 0, why: 'NO SUBJECT ON RECORD' };
       const b = bestMatch(A, ctx.photos, (p) => p.person);
-      return { ok: b.sim >= 0.72, score: Math.min(1, (b.sim - 0.55) / 0.35), why: `BEST MATCH ${pct(Math.max(0, b.sim))} · NEED 72%`, marks: b.photo ? [{ t: 'match', photo: b.photo.id, sim: b.sim }] : [] };
+      return { ok: b.sim >= SAME, score: Math.min(1, (b.sim - 0.55) / 0.35), why: `BEST MATCH ${pct(Math.max(0, b.sim))} · NEED ${pct(SAME)}`, marks: b.photo ? [{ t: 'match', photo: b.photo.id, sim: b.sim }] : [] };
     },
   },
   unaware: {
