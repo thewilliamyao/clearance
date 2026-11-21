@@ -4,6 +4,7 @@
 import { dot, unpackEmb } from '../vision/clip.js';
 import { inFocus } from '../vision/cv.js';
 import { CONCEPTS } from '../data/prompts.js';
+import { LEARNED_LABEL } from './labels.js';
 
 const pct = (v) => `${Math.round(v * 100)}%`;
 const n2 = (v) => v.toFixed(2).replace(/^0/, '');
@@ -99,11 +100,7 @@ function face(test, why) {
 // tools/test/intent-bench.mjs); its own reading still goes into the PROFILE line.
 export const INTENT_NEED = 0.7; // where the model's own score would count as agreeing
 const closeFace = (A) => (A.faces || []).some((f) => f.box[2] * f.box[3] > 0.1);
-export const LEARNED_LABEL = {
-  sadness: 'SAD', alone: 'ALONE', waiting: 'WAITING', hurry: 'IN A HURRY', tired: 'TIRED',
-  notbelong: 'DOES NOT BELONG', suspicious: 'SUSPICIOUS', outofplace: 'OUT OF PLACE',
-  abandoned: 'ABANDONED', hiding: 'A PLACE TO HIDE',
-};
+export { LEARNED_LABEL }; // labels.js: shared with the index page and the shared index
 // What the unit asks the first time.
 export const ASK = {
   sadness: "OH, SO THAT'S SADNESS?", alone: "OH, SO THEY'RE ALONE?", waiting: "OH, SO THEY'RE WAITING?",
@@ -324,7 +321,7 @@ export function requestShort(req) {
 // unit looks for one thing at a time. pick is set when the photo meets it.
 export function judgeSelected(A, requests, sel, ctx) {
   const r = requests[sel];
-  if (!r || r.done) return { pick: null, focus: null };
+  if (!r || r.done || r.withdrawn) return { pick: null, focus: null };
   const def = REQUESTS[r.key];
   let res;
   try { res = def.judge(A, { ...ctx, arg: r.arg, req: r }); } catch (e) { console.error(e); res = { ok: false, score: 0, why: 'MODULE FAULT' }; }

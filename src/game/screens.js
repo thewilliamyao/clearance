@@ -5,7 +5,8 @@ import { fitText } from '../engine/font.js';
 import { desk, paper, rule, seal, header, stamp, list, notice, bar, dim, hints, drawText, textWidth, wrapText, LINE_H } from './ui.js';
 import { SENSORS, TONES, LENSES, FILMS } from './tiers.js';
 import { DAYS, LAST_DAY, RECORDER } from './days.js';
-import { REQUESTS, requestText, requestShort, lookFor } from './requests.js';
+import { REQUESTS, requestText, requestShort, lookFor, LEARNED_LABEL } from './requests.js';
+import { heading, printColors, dayText, indexNo, PRINT_W, PRINT_H } from './shared-index.js';
 import { SHOP } from './game.js';
 import { MODULES, MODULE_ORDER, RUNTIME_MB } from '../vision/modules.js';
 import { analyzeCV, FOCUS } from '../vision/cv.js';
@@ -57,7 +58,9 @@ export class Title {
     if (s.phase === 'ended') items.push({ id: 'again', label: 'BEGIN AGAIN' });
     else items.push({ id: 'go', label: s.phase === 'new' ? 'REPORT FOR DUTY' : `RESUME SHIFT ${s.day}` });
     if (s.phase !== 'new' && s.phase !== 'ended') items.push({ id: 'again', label: 'NEW RECORDER' });
-    items.push({ id: 'lab', label: 'LAB' }, { id: 'settings', label: 'SETTINGS' });
+    items.push({ id: 'lab', label: 'LAB' });
+    if (this.g.index.connected) items.push({ id: 'index', label: 'THE INDEX' }); // once the shared index exists
+    items.push({ id: 'settings', label: 'SETTINGS' });
     return items;
   }
   update(dt) {
@@ -74,6 +77,7 @@ export class Title {
     const g = this.g;
     g.sfx.confirm();
     if (id === 'lab') return g.go('lab');
+    if (id === 'index') return g.go('index', 'title');
     if (id === 'settings') return g.go('settings');
     if (id === 'again' && g.save.phase !== 'ended' && g.save.phase !== 'new') {
       return g.go('confirm', { text: 'START OVER AS A NEW RECORDER? YOUR SHIFTS, MERIT AND EVERY EXPOSURE WILL BE DELETED.', yes: 'START OVER', no: 'KEEP', onYes: () => { g.newGame(); g.go('title'); }, onNo: () => g.go('title') });
@@ -168,9 +172,10 @@ export class Order {
       drawText(scr, `REQUESTS · FILE ANY ${o.quota} OF ${o.requests.length}`, 18, y, P.ink); y += 12;
       for (const r of o.requests) {
         const def = REQUESTS[r.key];
-        drawText(scr, r.done ? '■' : '□', 20, y, P.ink);
-        drawText(scr, fitText(requestText(r), 200), 30, y, P.ink);
-        drawText(scr, r.done ? `FILED +${r.merit}` : def.merit ? String(def.merit) : '—', 300, y, P.ink, { align: 'right' });
+        drawText(scr, r.done ? '■' : r.withdrawn ? '×' : '□', 20, y, P.ink);
+        const tw = drawText(scr, fitText(requestText(r), 200), 30, y, r.withdrawn ? P.mid : P.ink);
+        if (r.withdrawn) scr.hline(29, 30 + tw, y + 3, P.mid);
+        drawText(scr, r.done ? `FILED +${r.merit}` : r.withdrawn ? 'WITHDRAWN' : def.merit ? String(def.merit) : '—', 300, y, P.ink, { align: 'right' });
         y += 11;
       }
       y += 2; rule(scr, 16, 304, y, P); y += 5;
@@ -201,7 +206,7 @@ export class Viewfinder {
     g.installModules();
     g.wake();
   }
-  open() { return this.g.order ? this.g.order.requests.map((r, i) => (r.done ? -1 : i)).filter((i) => i >= 0) : []; }
+  open() { return this.g.order ? this.g.order.requests.map((r, i) => (r.done || r.withdrawn ? -1 : i)).filter((i) => i >= 0) : []; }
   fixFocus(dir) {
     const open = this.open();
     if (!open.length) { this.focus = 0; return; }
@@ -240,7 +245,7 @@ export class Viewfinder {
   }
   // The selected request: what to look for, and (for the plain-code checks) its own judge run
   // on the live picture a few times a second, so the Recorder sees what the unit sees.
-  selected() { const o = this.g.order, r = o && o.requests[this.focus]; return r && !r.done ? r : null; }
+  selected() { const o = this.g.order, r = o && o.requests[this.focus]; return r && !r.done && !r.withdrawn ? r : null; }
   scan(dt) {
     const g = this.g, r = this.selected();
     this.liveT -= dt;
@@ -345,12 +350,12 @@ export class Viewfinder {
     drawText(scr, head, x + 4, y + 3, met ? P.stamp : P.paper);
     for (let k = x + 3; k < x + w - 3; k += 2) scr.pset(k, y + 11, P.mid);
     rs.forEach((r, k) => {
-      const ry = y + 14 + k * 9, on = !r.done && k === this.focus;
+      const ry = y + 14 + k * 9, shut = r.done || r.withdrawn, on = !shut && k === this.focus;
       if (on) scr.rect(x + 1, ry - 1, w - 2, 9, P.paper);
-      const fg = on ? P.ink : r.done ? P.mid : P.paper;
-      drawText(scr, r.done ? '✓' : on ? '▸' : r.asked ? '?' : '□', x + 4, ry, fg);
+      const fg = on ? P.ink : shut ? P.mid : P.paper;
+      drawText(scr, r.done ? '✓' : r.withdrawn ? '×' : on ? '▸' : r.asked ? '?' : '□', x + 4, ry, fg);
       const tw = drawText(scr, labels[k], x + 14, ry, fg);
-      if (r.done) scr.hline(x + 13, x + 14 + tw, ry + 3, P.mid);
+      if (shut) scr.hline(x + 13, x + 14 + tw, ry + 3, P.mid);
     });
     const sel = this.selected(), lv = this.live;
     if (sel && lv && lv.key === sel.key) {
@@ -415,9 +420,9 @@ export class Viewfinder {
 }
 
 // Shift 5: the unit asks back instead of filing. Its own voice (INTENT), not the Office's.
-function askBubble(scr, P, question, reveal) {
+function askBubble(scr, P, question, reveal, sel = 0) {
   const lines = wrapText(question, 172);
-  const w = 190, h = 31 + lines.length * LINE_H + 6;
+  const w = 190, h = 31 + lines.length * LINE_H + 25;
   const x = W - w - 5, y = 41, sx = W - 15, sy = 23; // below ● CONTINUE
   const k = Math.min(1, reveal), e = 1 + 2.7 * (k - 1) ** 3 + 1.7 * (k - 1) ** 2;
   seal(scr, sx, sy, 9, P.ink, P.paper);
@@ -432,6 +437,12 @@ function askBubble(scr, P, question, reveal) {
   drawText(scr, 'YOU SURE?', x + 8, y + 14, P.stamp);
   scr.hline(x + 8, x + 8 + textWidth('YOU SURE?'), y + 22, P.stamp);
   lines.forEach((l, j) => drawText(scr, l, x + 8, y + 28 + j * LINE_H, P.ink));
+  const by = y + h - 15, bw = 83;
+  ['SHOW AGAIN', 'NO'].forEach((label, j) => {
+    const bx = x + 8 + j * (bw + 8);
+    if (sel === j) scr.rect(bx, by - 3, bw, 13, P.ink); else scr.frame(bx, by - 3, bw, 13, P.ink);
+    drawText(scr, label, bx + bw / 2, by, sel === j ? P.paper : P.ink, { align: 'center' });
+  });
 }
 
 // A paper bubble with rounded corners and a drop shadow.
@@ -450,6 +461,7 @@ export class Develop {
   enter(photo) {
     const g = this.g;
     this.photo = photo; this.t = 0; this.A = null; this.readyAt = null; this.stamped = false; this.marksShown = 0; this.linesShown = 0; this.shake = 0;
+    this.askSel = 0; // shift 5's YOU SURE?: 0 SHOW AGAIN, 1 NO
     g.sfx.shutter(); g.buzz(25);
     g.analyze(photo).then((A) => { this.A = A; this.readyAt = Math.max(1.0, this.t); }).catch((e) => { console.error(e); this.A = { cv: null }; this.readyAt = this.t; });
   }
@@ -480,6 +492,18 @@ export class Develop {
       if (this.photo.verdict && this.photo.verdict.ok) setTimeout(() => g.sfx.confirm(), 180);
     }
     this.shake = Math.max(0, this.shake - dt);
+    // The unit asked YOU SURE?: SHOW AGAIN (the next photo files) or NO (withdraw the request).
+    const v = this.photo.verdict;
+    if (this.stamped && v && v.soft && !v.ok) {
+      if (this.t - this.tStamp < 0.3) return; // let the bubble land before it takes presses
+      if (i.hit('LEFT') || i.hit('RIGHT') || i.hit('UP') || i.hit('DOWN')) { this.askSel = 1 - this.askSel; g.sfx.move(); }
+      if ((i.hit('OK') || i.tapped) && this.askSel === 1) {
+        if (g.refuse(this.photo)) { g.sfx.deny(); g.buzz(40); g.toast('JUDGEMENT WITHDRAWN'); }
+        return this.leave();
+      }
+      if (i.hit('OK') || i.tapped || i.hit('SHUTTER') || i.hit('SELECT')) { g.sfx.blip(); return this.leave(); }
+      return;
+    }
     if (i.hit('OK') || i.hit('SHUTTER') || i.tapped || i.hit('SELECT')) {
       if (this.readyAt === null) return;
       if (!this.stamped) { this.t = this.tStamp; return; }
@@ -519,9 +543,12 @@ export class Develop {
     if (this.stamped) {
       const v = ph.verdict, r = Math.min(1, (this.t - this.tStamp) * 6);
       if (v && v.ok) stamp(scr, v.merit ? [['FILED', 3], [fitText(v.text, 220), 1], [`+${v.merit} MERIT`, 2]] : [['FILED', 3], [v.text, 1]], 160, 62, P.stamp, { seed: ph.id, reveal: r, angle: -0.07 });
-      else if (v && v.soft) askBubble(scr, P, v.why, r);
+      else if (v && v.soft) askBubble(scr, P, v.why, r, this.askSel);
       else stamp(scr, [['NOT FILED', 2], [fitText(v && v.why ? v.why : 'NO OPEN REQUEST', 250), 1]], 160, 52, P.stamp, { seed: ph.id, angle: 0.04, reveal: r });
       if (blink(g.t, 1.5)) drawText(scr, '● CONTINUE', W - 4, 3, P.paper, { align: 'right', bg: P.ink });
+      // Shift 5 with SHARE WITH THE INDEX on: where its 40x30 copy is.
+      const st = v && v.ok ? g.index.statusOf(ph.id) : null;
+      if (st) drawText(scr, st.state === 'shared' ? `SHARED · INDEX ${indexNo(st.entry.id)}` : st.state === 'sending' ? 'SENDING TO THE INDEX' : 'QUEUED FOR THE INDEX', W - 4, 14, P.paper, { align: 'right', bg: P.ink });
     }
   }
 }
@@ -586,6 +613,7 @@ export class Menu {
     const g = this.g;
     this.items = [
       { id: 'resume', label: 'RESUME' }, { id: 'order', label: 'WORK ORDER' }, { id: 'archive', label: 'ARCHIVE', value: String(g.store.list.length) },
+      ...(g.index.connected ? [{ id: 'index', label: 'THE INDEX' }] : []),
       { id: 'lab', label: 'LAB' }, { id: 'settings', label: 'SETTINGS' }, { id: 'end', label: 'END SHIFT', value: `${g.filed()}/${g.order ? g.order.quota : 0}` },
     ];
     if (g.day >= 5 && g.day < LAST_DAY) this.items.push({ id: 'expose', label: 'OPEN THE BACK OF THE UNIT' });
@@ -603,6 +631,7 @@ export class Menu {
     if (id === 'resume') g.go('field');
     else if (id === 'order') g.go('order', 'view');
     else if (id === 'archive') g.go('archive', 'menu');
+    else if (id === 'index') g.go('index', 'menu');
     else if (id === 'lab') g.go('lab', 'menu');
     else if (id === 'settings') g.go('settings', 'menu');
     else if (id === 'title') g.go('title');
@@ -660,7 +689,10 @@ export class Confirm {
 // =========================================================================== ARCHIVE
 export class Archive {
   constructor(g) { this.g = g; this.sel = 0; this.view = false; }
-  enter(from) { this.from = from || this.from || 'menu'; this.view = false; this.sel = Math.max(0, this.g.store.list.length - 1); }
+  enter(from) {
+    if (from === 'back') { this.sel = Math.min(this.sel, Math.max(0, this.g.store.list.length - 1)); return; } // after a confirm
+    this.from = from || this.from || 'menu'; this.view = false; this.sel = Math.max(0, this.g.store.list.length - 1);
+  }
   update() {
     const g = this.g, i = g.input, n = g.store.list.length;
     if (i.hit('SELECT')) { g.sfx.blip(); if (this.view) this.view = false; else g.go(this.from === 'menu' ? 'menu' : this.from); return; }
@@ -669,6 +701,8 @@ export class Archive {
       if (i.hit('LEFT')) { this.sel = (this.sel + n - 1) % n; g.sfx.move(); }
       if (i.hit('RIGHT')) { this.sel = (this.sel + 1) % n; g.sfx.move(); }
       if (i.hit('OK') || i.tapped) { this.view = false; g.sfx.blip(); }
+      const st = g.index.statusOf(g.store.list[this.sel].id);
+      if (i.hit('DOWN') && st && st.state === 'shared') { g.sfx.blip(); withdrawConfirm(g, st.entry, 'archive'); }
       return;
     }
     if (i.hit('LEFT')) { this.sel = Math.max(0, this.sel - 1); g.sfx.move(); }
@@ -679,7 +713,13 @@ export class Archive {
   }
   draw() {
     const g = this.g, scr = g.scr, P = g.P, list = g.store.list;
-    if (this.view && list[this.sel]) return drawPhoto(g, list[this.sel], `◂ ▸ BROWSE · ${this.sel + 1}/${list.length}`);
+    if (this.view && list[this.sel]) {
+      drawPhoto(g, list[this.sel], `◂ ▸ BROWSE · ${this.sel + 1}/${list.length}`);
+      const st = g.index.statusOf(list[this.sel].id);
+      if (st && st.state === 'shared') drawText(scr, `IN THE INDEX ${indexNo(st.entry.id)} · ▾ WITHDRAW`, W - 4, 3, P.paper, { align: 'right', bg: P.ink });
+      for (const t of g.toasts) notice(scr, t.text, P, 104);
+      return;
+    }
     desk(scr, P);
     drawText(scr, `ARCHIVE · ${list.length} EXPOSURE${list.length === 1 ? '' : 'S'} ON FILE`, 8, 4, P.paper);
     if (!list.length) { notice(scr, 'NO EXPOSURES ON FILE.', P, 100, true); }
@@ -735,7 +775,7 @@ export class Report {
     for (const r of o.requests) {
       drawText(scr, r.done ? '✓' : '×', 20, y, r.done ? P.ink : P.mid);
       drawText(scr, fitText(requestText(r), 200), 30, y, r.done ? P.ink : P.mid);
-      drawText(scr, r.done ? `+${r.merit}` : '—', 300, y, P.ink, { align: 'right' });
+      drawText(scr, r.done ? `+${r.merit}` : r.withdrawn ? 'WITHDRAWN' : '—', 300, y, P.ink, { align: 'right' });
       y += 11;
     }
     y += 2; rule(scr, 16, 304, y, P); y += 6;
@@ -743,12 +783,13 @@ export class Report {
     const rows = [
       [`FILED ${g.filed()} OF ${o.requests.length} · QUOTA ${o.quota}`, met ? 'MET' : 'NOT MET'],
       ['EXPOSURES USED', `${o.shots}`],
+      ...(g.withdrawn() ? [['JUDGEMENTS WITHDRAWN', `${g.withdrawn()}`]] : []),
       ['MERIT FOR REQUESTS', `${o.earned}`],
       met ? ['DILIGENCE BONUS (20%)', `+${o.bonus}`] : ['CITATION', `−${o.citation}`],
       ['MERIT ON HAND', `${g.save.merit}`],
     ];
     for (const [a, b] of rows) { drawText(scr, a, 20, y, P.ink); drawText(scr, b, 300, y, P.ink, { align: 'right' }); y += 11; }
-    if (this.stamped) stamp(scr, met ? [['APPROVED', 2]] : [['CITATION', 2], ['QUOTA NOT MET', 1]], 236, 196, P.stamp, { seed: 40 + d.n, angle: -0.16, reveal: Math.min(1, (this.t - 0.9) * 6) });
+    if (this.stamped) stamp(scr, met ? [['APPROVED', 2]] : [['CITATION', 2], ['QUOTA NOT MET', 1]], 236, g.withdrawn() ? 206 : 196, P.stamp, { seed: 40 + d.n, angle: -0.16, reveal: Math.min(1, (this.t - 0.9) * 6) });
     if (this.t > 0.9 && blink(g.t, 1.5)) drawText(scr, '● REQUISITIONS', 20, 222, P.ink);
   }
 }
@@ -834,7 +875,10 @@ function shopNote(r) {
 // =========================================================================== SETTINGS
 export class Settings {
   constructor(g) { this.g = g; this.sel = 0; this.jump = 1; }
-  enter(from) { this.from = from === 'menu' ? 'menu' : 'title'; this.sel = 0; this.jump = this.g.day; }
+  enter(from, prev) {
+    if (prev === 'confirm') return; // back from a question: same row
+    this.from = from === 'menu' ? 'menu' : 'title'; this.sel = 0; this.jump = this.g.day;
+  }
   items() {
     const s = this.g.save.settings, g = this.g;
     const st = (id) => g.modules.st[id].state;
@@ -848,6 +892,7 @@ export class Settings {
       { id: 'haptics', label: 'VIBRATION', value: s.haptics ? 'ON' : 'OFF' },
       { id: 'facing', label: 'CAMERA', value: s.facing === 'user' ? 'FRONT' : 'BACK' },
       { id: 'tap', label: 'TAP SCREEN TO SHOOT', value: s.tapShoot ? 'ON' : 'OFF' },
+      ...(g.index.connected ? [{ id: 'share', label: 'SHARE WITH THE INDEX', value: s.share ? 'ON' : 'OFF' }] : []),
       { id: 'jump', label: 'DEV: JUMP TO SHIFT', value: `◂ ${this.jump} ▸`, dim: true },
       { id: 'unlock', label: 'DEV: UNLOCK EVERYTHING', value: g.save.dev.unlockAll ? 'ON' : 'OFF', dim: true },
       { id: 'models', label: 'DEV: DOWNLOAD ALL MODELS', value: loading.length ? `${MODULES[loading[0]].name} ${Math.round(g.modules.st[loading[0]].progress * 100)}%` : `${nReady}/4 READY`, dim: true },
@@ -869,6 +914,13 @@ export class Settings {
     else if (id === 'haptics') { s.haptics = !s.haptics; g.buzz(30); }
     else if (id === 'facing') { s.facing = s.facing === 'user' ? 'environment' : 'user'; g.camera.start(s.facing); }
     else if (id === 'tap') s.tapShoot = !s.tapShoot;
+    else if (id === 'share') {
+      if (s.share) { s.share = false; g.index.stop(); g.toast('SHARING OFF'); }
+      else return g.go('confirm', {
+        text: 'SHARE YOUR SHIFT 5 FILINGS WITH THE INDEX? EACH ONE GOES AS A 40×30 TWO-TONE PRINT WITH ITS LABEL, AND ANYONE CAN SEE IT. SHARE ONLY PEOPLE WHO AGREED TO BE PHOTOGRAPHED.',
+        yes: 'SHARE', no: 'NOT NOW', onYes: () => { s.share = true; g.persist(); g.go('settings', this.from); }, onNo: () => g.go('settings', this.from),
+      });
+    }
     else if (id === 'jump') {
       if (dir) this.jump = Math.max(1, Math.min(LAST_DAY, this.jump + dir));
       else { g.jumpTo(this.jump); g.toast(`NOW ON SHIFT ${this.jump}`); return g.go('order'); }
@@ -884,9 +936,141 @@ export class Settings {
     paper(scr, 20, 8, 280, 224, P);
     header(scr, 26, 12, 268, 'UNIT SETTINGS', P);
     list(scr, items, this.sel, 24, 42, 272, P, 13);
+    if (items[this.sel].id === 'share') hints(scr, 'SHARE ONLY PEOPLE WHO AGREED TO BE PHOTOGRAPHED.', P, 203, P.stamp);
     hints(scr, '◂ ▸ CHANGE · ● OK · SELECT BACK', P, 218);
     for (const t of g.toasts) notice(scr, t.text, P, 104);
   }
+}
+
+// =========================================================================== THE INDEX
+// What Recorders have filed on shift 5, pooled from every unit that shares (shared-index.js,
+// server/). Three levels: every label with its newest prints, one label's contact sheet, one
+// print. Each print is the 40x30 two-tone copy its unit sent, drawn in this unit's palette.
+const IX = { rows: 6, rowH: 35, y0: 16, strip: 5, px0: 104, pitch: 43, cols: 7, sheetRows: 6, sx0: 11, sy0: 16, spx: 43, spy: 34 };
+export class IndexScreen {
+  constructor(g) { this.g = g; this.level = 0; this.row = 0; this.top = 0; this.cur = 0; this.scroll = 0; this.from = 'menu'; }
+  enter(arg) {
+    const g = this.g;
+    if (arg !== 'back') { this.from = arg === 'title' ? 'title' : 'menu'; this.level = 0; this.row = 0; this.top = 0; }
+    g.index.load();
+    g.index.flush().then(() => g.index.load());
+  }
+  labels() { const d = this.g.index.data; return d ? d.labels : []; }
+  colors(e) {
+    const g = this.g, k = g.theme.id;
+    if (e.pal !== k) { e.colors = printColors(e.px, g.P.ink, g.P.paper, e.colors); e.pal = k; }
+    return e.colors;
+  }
+  update() {
+    const g = this.g, i = g.input, ix = g.index, ls = this.labels();
+    const ok = i.hit('OK') || i.tapped;
+    if (this.level === 0) {
+      if (i.hit('SELECT')) { g.sfx.blip(); return g.go(this.from); }
+      if (!ls.length) { if (ok && ix.connected && !ix.loading) { g.sfx.blip(); ix.load(true); } return; }
+      if (i.hit('UP')) { this.row = (this.row + ls.length - 1) % ls.length; g.sfx.move(); }
+      if (i.hit('DOWN')) { this.row = (this.row + 1) % ls.length; g.sfx.move(); }
+      this.row = Math.min(this.row, ls.length - 1);
+      this.top = Math.max(0, Math.min(Math.max(this.top, this.row - IX.rows + 1), this.row, ls.length - IX.rows));
+      if (ok || i.hit('RIGHT')) {
+        if (!ls[this.row].entries.length) { g.sfx.deny(); return; }
+        this.level = 1; this.cur = 0; this.scroll = 0; g.sfx.blip();
+      }
+      return;
+    }
+    const l = ls[this.row];
+    if (!l || !l.entries.length) { this.level = 0; return; }
+    const n = l.entries.length;
+    this.cur = Math.min(this.cur, n - 1);
+    if (this.level === 1) {
+      if (i.hit('SELECT')) { this.level = 0; g.sfx.blip(); return; }
+      let c = this.cur;
+      if (i.hit('LEFT')) c--;
+      if (i.hit('RIGHT')) c++;
+      if (i.hit('UP')) c -= IX.cols;
+      if (i.hit('DOWN')) c += IX.cols;
+      c = Math.max(0, Math.min(n - 1, c));
+      if (c !== this.cur) { this.cur = c; g.sfx.move(); }
+      const r = Math.floor(this.cur / IX.cols);
+      this.scroll = Math.min(Math.max(this.scroll, r - IX.sheetRows + 1), r);
+      if (l.more && this.cur >= n - IX.cols * 2) ix.more(l.label);
+      if (ok) { this.level = 2; g.sfx.blip(); }
+      return;
+    }
+    // One print: ◂ ▸ through the label, ▾ withdraws it if this unit sent it.
+    if (i.hit('SELECT') || ok) { this.level = 1; g.sfx.blip(); return; }
+    if (i.hit('LEFT') && this.cur > 0) { this.cur--; g.sfx.move(); }
+    if (i.hit('RIGHT') && this.cur < n - 1) { this.cur++; g.sfx.move(); }
+    if (l.more && this.cur >= n - 3) ix.more(l.label);
+    const mine = ix.mine(l.entries[this.cur].id);
+    if (i.hit('DOWN') && mine) { g.sfx.blip(); withdrawConfirm(g, mine, 'index'); }
+  }
+  draw() {
+    const g = this.g, scr = g.scr, P = g.P, ls = this.labels(), l = ls[this.row];
+    if (this.level === 2 && l && l.entries[this.cur]) this.drawPrint(l, l.entries[this.cur]);
+    else { desk(scr, P); if (this.level === 1 && l) this.drawSheet(l); else this.drawLabels(ls); }
+    for (const t of g.toasts) notice(scr, t.text, P, 104);
+  }
+  drawLabels(ls) {
+    const g = this.g, scr = g.scr, P = g.P, ix = g.index;
+    drawText(scr, 'THE INDEX', 6, 4, P.paper);
+    if (ix.data) drawText(scr, `${ix.data.total} PRINT${ix.data.total === 1 ? '' : 'S'} ON FILE`, W - 6, 4, P.mid, { align: 'right' });
+    if (!ls.length) {
+      const msg = !ix.connected ? 'THE INDEX IS NOT CONNECTED.' : ix.loading ? (blink(g.t, 2) ? 'CONTACTING THE INDEX…' : '') : 'THE INDEX DID NOT ANSWER.\n● TRY AGAIN';
+      if (msg) notice(scr, msg, P, 100, true);
+      drawText(scr, 'SELECT BACK', 6, H - 10, P.paper);
+      return;
+    }
+    for (let k = this.top; k < Math.min(ls.length, this.top + IX.rows); k++) {
+      const lb = ls[k], y = IX.y0 + (k - this.top) * IX.rowH, on = k === this.row;
+      if (on) scr.rect(2, y - 2, W - 4, IX.rowH - 1, P.paper);
+      drawText(scr, LEARNED_LABEL[lb.label], 8, y + 6, on ? P.ink : P.paper);
+      drawText(scr, lb.n ? `${lb.n} FILED` : 'NONE ON FILE', 8, y + 17, P.mid);
+      for (let j = 0; j < IX.strip; j++) {
+        const x = IX.px0 + j * IX.pitch, e = lb.entries[j];
+        if (e) { scr.blitTo(this.colors(e), PRINT_W, PRINT_H, x, y, PRINT_W, PRINT_H); scr.frame(x - 1, y - 1, PRINT_W + 2, PRINT_H + 2, on ? P.ink : P.mid); }
+        else scr.dots(x, y, PRINT_W, PRINT_H, on ? P.mid : P.dark);
+      }
+    }
+    drawText(scr, '▴▾ CHOOSE · ● OPEN · SELECT BACK', 6, H - 10, P.paper);
+    drawText(scr, `${this.row + 1}/${ls.length} · ${g.save.settings.share ? 'SHARING ON' : 'SHARING OFF'}`, W - 6, H - 10, P.mid, { align: 'right' });
+  }
+  drawSheet(l) {
+    const g = this.g, scr = g.scr, P = g.P;
+    drawText(scr, fitText(heading(l.label), 236), 6, 4, P.paper);
+    drawText(scr, `${l.n} FILED`, W - 6, 4, P.mid, { align: 'right' });
+    const first = this.scroll * IX.cols;
+    for (let k = first; k < Math.min(l.entries.length, first + IX.cols * IX.sheetRows); k++) {
+      const c = k - first, e = l.entries[k];
+      const x = IX.sx0 + (c % IX.cols) * IX.spx, y = IX.sy0 + Math.floor(c / IX.cols) * IX.spy;
+      scr.blitTo(this.colors(e), PRINT_W, PRINT_H, x, y, PRINT_W, PRINT_H);
+      if (k === this.cur) { scr.frame(x - 2, y - 2, PRINT_W + 4, PRINT_H + 4, P.paper); scr.frame(x - 3, y - 3, PRINT_W + 6, PRINT_H + 6, P.paper); }
+      else scr.frame(x - 1, y - 1, PRINT_W + 2, PRINT_H + 2, P.mid);
+      if (g.index.mine(e.id)) scr.rect(x + PRINT_W - 5, y + 2, 3, 3, P.stamp); // this unit sent it
+    }
+    drawText(scr, '◂ ▸ ▴ ▾ CHOOSE · ● VIEW · SELECT BACK', 6, H - 10, P.paper);
+    drawText(scr, l.fetching ? 'LOADING…' : `${this.cur + 1}/${l.n}`, W - 6, H - 10, P.mid, { align: 'right' });
+  }
+  drawPrint(l, e) {
+    const g = this.g, scr = g.scr, P = g.P, word = LEARNED_LABEL[l.label];
+    scr.blit(this.colors(e), PRINT_W, PRINT_H, 0, 0, W / PRINT_W);
+    stamp(scr, [['FILED AS', 1], [word, 2]], Math.min(236, W - textWidth(word, 2) / 2 - 16), 46, P.stamp, { seed: e.id, angle: -0.08 });
+    drawText(scr, `INDEX ${indexNo(e.id)} · ${dayText(e.day)}`, 4, 3, P.paper, { bg: P.ink });
+    drawText(scr, `◂ ▸ BROWSE · ${this.cur + 1}/${l.n} · SELECT BACK`, 4, H - 10, P.paper, { bg: P.ink });
+    if (g.index.mine(e.id)) drawText(scr, 'YOURS · ▾ WITHDRAW', W - 4, H - 10, P.paper, { align: 'right', bg: P.stamp });
+  }
+}
+
+// Take one of this unit's prints back out of the index (from the archive or the INDEX screen).
+function withdrawConfirm(g, entry, back) {
+  g.go('confirm', {
+    text: `WITHDRAW PRINT ${indexNo(entry.id)} FROM THE INDEX? IT IS DELETED FOR EVERYONE.`,
+    yes: 'WITHDRAW', no: 'KEEP', danger: true,
+    onYes: () => {
+      g.go(back, 'back');
+      g.index.withdraw(entry).then((ok) => g.toast(ok ? 'WITHDRAWN FROM THE INDEX' : 'THE INDEX REFUSED · TRY AGAIN'), () => g.toast('THE INDEX DID NOT ANSWER · TRY AGAIN'));
+    },
+    onNo: () => g.go(back, 'back'),
+  });
 }
 
 // =========================================================================== LAB

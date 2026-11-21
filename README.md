@@ -12,7 +12,13 @@ The picture starts as 40x30 blobs of ink and paper and gets clearer as your clea
 
 ## Privacy
 
-Everything runs in your browser. The camera picture, your photos and the model's judgements never leave the device. Progress and photos are kept in the browser's storage; Settings ▸ ERASE EVERYTHING deletes them.
+Everything runs in your browser. The camera picture, your photos and the model's judgements stay on the device. Progress and photos are kept in the browser's storage; Settings ▸ ERASE EVERYTHING deletes them.
+
+The one exception is opt-in. With Settings ▸ SHARE WITH THE INDEX turned on (it starts off), each photo you file on shift 5 goes to [the index](https://thewilliamyao.github.io/clearance/index/) as a 40×30 two-tone copy, the game's crudest grade, with the label you filed it under. Nothing else is sent: no photo, no sharper print, no location, nothing that identifies your device. Share only people who agreed to be photographed. You can withdraw a print you shared from the archive or from THE INDEX screen.
+
+## The index
+
+What Recorders filed on shift 5, from every unit that shares: https://thewilliamyao.github.io/clearance/index/, and THE INDEX on the camera's title screen and menu.
 
 ## Controls
 

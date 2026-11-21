@@ -1,5 +1,7 @@
 // Progress lives in localStorage; developed exposures in IndexedDB. Nothing leaves the
-// device: photos of strangers stay on the phone that took them.
+// device: photos of strangers stay on the phone that took them. The one exception is opt-in:
+// with Settings ▸ SHARE WITH THE INDEX on, each shift 5 filing goes to the shared index as a
+// 40x30 two-tone copy (shared-index.js).
 
 const KEY = 'clearance.save.v1';
 
@@ -17,8 +19,13 @@ export function defaultSave() {
     citations: 0,
     ending: null,
     selfMisses: 0,
-    settings: { theme: 'ledger', body: 'silver', sound: true, haptics: true, tapShoot: true, facing: 'environment', hud: 0 },
+    refusals: 0, // shift 5: times the Recorder answered NO to "YOU SURE?" (ENDINGS.md)
+    // share: send shift 5 filings to the shared index as 40x30 two-tone prints (off until the
+    // Recorder turns it on; see shared-index.js).
+    settings: { theme: 'ledger', body: 'silver', sound: true, haptics: true, tapShoot: true, facing: 'environment', hud: 0, share: false },
     dev: { unlockAll: false },
+    outbox: [], // prints waiting to go to the index: [{ photo, label, bits }]
+    shared: [], // prints in the index, with the keys that withdraw them: [{ id, key, day, label, photo }]
   };
 }
 

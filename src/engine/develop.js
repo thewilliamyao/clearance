@@ -91,6 +91,21 @@ export class Developer {
     for (let i = 0; i < n; i++) out[i] = ramp[idx[i]];
     return out;
   }
+
+  // The lowest grade (SENSOR I / TONE I: 40x30, two tones, no dither) as bits, 1 = paper:
+  // exactly the picture process() prints at that grade. The shared index gets only this
+  // (src/game/shared-index.js); the frame and sharper prints never leave the phone.
+  bits(src, sw, sh, w = 40, h = 30) {
+    const rgbf = this.downsample(src, sw, sh, w, h, 'bits');
+    const n = w * h, lum = new Float32Array(n);
+    for (let i = 0; i < n; i++) lum[i] = 0.2126 * rgbf[i * 3] + 0.7152 * rgbf[i * 3 + 1] + 0.0722 * rgbf[i * 3 + 2];
+    const [lo, hi] = this.levels(lum, false);
+    const k = 1 / Math.max(0.05, hi - lo);
+    for (let i = 0; i < n; i++) lum[i] = Math.min(1, Math.max(0, (lum[i] - lo) * k));
+    const idx = new Uint8Array(n);
+    threshold(lum, 2, idx);
+    return idx;
+  }
 }
 
 // Unsharp mask with a 3x3 box blur.

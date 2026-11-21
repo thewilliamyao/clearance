@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>The Index · Clearance</title>
+<meta name="description" content="What Recorders filed on shift 5 of Clearance, shared from their units: 40×30 two-tone prints, by label.">
+<meta name="theme-color" content="#1d1b22">
+<meta name="referrer" content="no-referrer">
+<link rel="icon" href="../icons/icon-192.png">
+<link rel="apple-touch-icon" href="../icons/icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap">
+<style>
+  /* The palette is the game's: index.js sets these from src/engine/palette.js. */
+  :root { --ink: #1d1b22; --paper: #d9d0b8; --mid: #7d776e; --dark: #45414a; --stamp: #c63a2c; color-scheme: dark; }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html { background: var(--ink); }
+  body {
+    margin: 0; min-height: 100vh; color: var(--paper); background-color: var(--ink);
+    background-image: radial-gradient(var(--dark) 1px, transparent 1.4px); background-size: 8px 8px;
+    font: 16px/1.5 'Silkscreen', ui-monospace, monospace; -webkit-font-smoothing: none;
+  }
+  a { color: inherit; }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: max(24px, env(safe-area-inset-top)) 16px 56px; }
+  .px { image-rendering: pixelated; image-rendering: crisp-edges; display: block; }
+  /* Text drawn in the camera's own 5x7 font: --w is its width in font pixels, --k the scale. */
+  .bm { width: calc(var(--w) * var(--k, 3) * 1px); max-width: 100%; height: auto; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  header { display: flex; gap: 18px; align-items: center; margin-bottom: 18px; }
+  header .seal { width: 76px; flex: none; }
+  header .office { --k: 2; margin-bottom: 10px; }
+  header h1 { margin: 0; }
+  header h1 .bm { --k: 7; }
+  .lede { max-width: 46em; margin: 0 0 18px; }
+  .lede b { font-weight: normal; color: var(--paper); background: var(--stamp); padding: 0 4px; }
+
+  .bar { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; margin: 0 0 22px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { border: 2px solid var(--paper); padding: 2px 8px; line-height: 1.3; text-decoration: none; white-space: nowrap; }
+  .chip:hover, .chip:focus-visible, .chip[aria-pressed="true"] { background: var(--paper); color: var(--ink); outline: none; }
+  .chip .n { color: var(--mid); }
+  .chip:hover .n, .chip:focus-visible .n { color: var(--ink); }
+  .swatches { display: flex; gap: 6px; align-items: center; }
+  .swatch { width: 28px; height: 28px; border: 2px solid var(--paper); display: grid; grid-template-columns: 1fr 1fr; }
+  .swatch[aria-pressed="true"] { outline: 2px solid var(--stamp); outline-offset: 2px; }
+
+  /* Each label is one of the Office's forms: paper on the desk, with a hard 1-bit shadow. */
+  .form {
+    position: relative; color: var(--ink); background: var(--paper); margin: 0 0 28px; padding: 14px 16px 18px;
+    border: 2px solid var(--ink); box-shadow: 6px 6px 0 0 var(--dark);
+  }
+  .form-head { display: flex; gap: 12px; align-items: center; border-bottom: 2px dotted var(--ink); padding-bottom: 10px; margin-bottom: 14px; }
+  .form-head .seal { width: 38px; flex: none; }
+  .form-head .office { --k: 2; margin-bottom: 6px; }
+  .form-head h2 { margin: 0; flex: 1; min-width: 0; }
+  .form-head h2 .bm { --k: 3; }
+  .form-head .count { white-space: nowrap; align-self: flex-start; }
+  .sheet { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 10px; }
+  .print { display: block; width: 100%; border: 2px solid var(--ink); background: var(--ink); }
+  .print canvas { width: 100%; height: auto; }
+  .print:hover, .print:focus-visible { outline: 3px solid var(--stamp); outline-offset: 1px; }
+  .print.held { border-style: dashed; }
+  .none { color: var(--mid); margin: 4px 0; }
+  .more { margin-top: 14px; border: 2px solid var(--ink); padding: 2px 10px; }
+  .more:hover, .more:focus-visible { background: var(--ink); color: var(--paper); outline: none; }
+
+  .status { border: 2px solid var(--paper); padding: 14px 16px; margin: 0 0 28px; }
+  .status button { border: 2px solid var(--paper); padding: 0 8px; margin-left: 8px; }
+
+  footer { margin-top: 36px; color: var(--paper); }
+  footer .play { display: inline-block; background: var(--paper); color: var(--ink); padding: 4px 12px; text-decoration: none; margin-bottom: 18px; }
+  footer .play:hover, footer .play:focus-visible { background: var(--stamp); color: var(--paper); }
+  footer p { max-width: 46em; margin: 0 0 12px; color: var(--mid); }
+
+  /* One print, big. */
+  dialog { border: 2px solid var(--ink); padding: 14px; color: var(--ink); background: var(--paper); box-shadow: 8px 8px 0 0 var(--dark); width: min(680px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; }
+  dialog::backdrop { background-color: rgba(0, 0, 0, .55); }
+  .big { position: relative; border: 2px solid var(--ink); }
+  .big canvas.print-big { width: 100%; height: auto; }
+  .big .stamp { position: absolute; height: auto; pointer-events: none; } /* placed by index.js as on the camera */
+  .cap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 14px; margin: 10px 0; }
+  .nav { display: flex; flex-wrap: wrap; gap: 8px; }
+  .nav button { border: 2px solid var(--ink); padding: 2px 10px; }
+  .nav button:hover, .nav button:focus-visible { background: var(--ink); color: var(--paper); outline: none; }
+  .nav button:disabled { opacity: .35; cursor: default; background: none; color: var(--ink); }
+  .nav .danger { border-color: var(--stamp); color: var(--stamp); }
+  .nav .danger:hover, .nav .danger:focus-visible { background: var(--stamp); color: var(--paper); }
+
+  .admin { border: 2px dashed var(--stamp); padding: 10px 12px; margin: 0 0 22px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .admin input { font: inherit; background: var(--paper); color: var(--ink); border: 2px solid var(--paper); padding: 0 6px; width: min(22em, 100%); }
+  .admin button { border: 2px solid var(--paper); padding: 0 8px; }
+
+  @media (max-width: 560px) {
+    body { font-size: 16px; }
+    header { gap: 12px; }
+    header .seal { width: 52px; }
+    header h1 .bm { --k: 5; }
+    header .office { --k: 1; margin-bottom: 6px; }
+    .form { padding: 12px 10px 14px; box-shadow: 4px 4px 0 0 var(--dark); }
+    .form-head { flex-wrap: wrap; }
+    .form-head .seal { display: none; }
+    .form-head .office { --k: 1; }
+    .chips { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 6px; max-width: 100%; scrollbar-width: thin; }
+    .bar { flex-direction: column; align-items: flex-start; }
+    .form-head h2 .bm { --k: 2; }
+    .sheet { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <canvas class="seal px" id="seal" aria-hidden="true"></canvas>
+    <div>
+      <canvas class="office bm px" id="office" aria-hidden="true"></canvas>
+      <h1><span class="sr">The Index</span><canvas class="bm px" id="title" aria-hidden="true"></canvas></h1>
+    </div>
+  </header>
+  <p class="lede">Prints filed by Recorders on shift 5 of <a href="../">Clearance</a>, sent from their units. Each one is kept only as a <b>40×30</b> two-tone print, the label it was filed under and the day it arrived.</p>
+  <div class="admin" id="admin" hidden></div>
+  <div class="bar">
+    <nav class="chips" id="chips" aria-label="Labels"></nav>
+    <div class="swatches" id="swatches" role="group" aria-label="Palette"></div>
+  </div>
+  <div id="status" class="status" role="status">CONTACTING THE INDEX…</div>
+  <main id="forms"></main>
+  <footer>
+    <a class="play" href="../">▸ PLAY CLEARANCE</a>
+    <p>Nothing else is kept: no photo, no sharper print, no location, nothing that identifies a unit or the Recorder who sent it. A unit sends prints only when its Recorder turns on SHARE WITH THE INDEX, and Recorders are asked to share only people who agreed to be photographed.</p>
+    <p>To have a print taken down, write to hello@thewilliamyao.com with its number.</p>
+  </footer>
+</div>
+<dialog id="dlg" aria-label="Print">
+  <div class="big"><canvas class="print-big px" id="bigPrint"></canvas><canvas class="stamp px" id="bigStamp" aria-hidden="true"></canvas></div>
+  <div class="cap"><span id="capNo"></span><span id="capDay"></span></div>
+  <div class="nav">
+    <button id="prev" type="button">◂ PREV</button>
+    <button id="next" type="button">NEXT ▸</button>
+    <button id="close" type="button">CLOSE</button>
+    <button id="approve" type="button" hidden>APPROVE</button>
+    <button id="del" class="danger" type="button" hidden>DELETE</button>
+  </div>
+</dialog>
+<script type="module" src="index.js"></script>
+</body>
+</html>

@@ -4,10 +4,11 @@ import { THEMES, themeColors, STAMP } from '../engine/palette.js';
 import { Developer } from '../engine/develop.js';
 import { SENSORS, TONES, LENSES, FILMS, SENSOR_BONUS } from './tiers.js';
 import { DAYS, LAST_DAY, issuedBy, makeOrder, seeded } from './days.js';
-import { REQUESTS, judgeSelected, requestText, learnedFrom } from './requests.js';
+import { REQUESTS, judgeSelected, requestText, learnedFrom, LEARNED_LABEL } from './requests.js';
 import { loadSave, writeSave, defaultSave, PhotoStore } from './save.js';
 import { Modules } from '../vision/modules.js';
 import { packEmb } from '../vision/clip.js';
+import { SharedIndex } from './shared-index.js';
 import * as S from './screens.js';
 
 const TRACKS = { sensor: SENSORS, tone: TONES, lens: LENSES, film: FILMS, tracking: [{ name: 'TRACKING OFF' }, { name: 'TRACKING', spec: 'LIVE OBJECT BOXES' }] };
@@ -27,6 +28,9 @@ export class Game {
     this.store = new PhotoStore();
     this.save = loadSave();
     this.sfx.on = this.save.settings.sound;
+    this.index = new SharedIndex(this);
+    this.indexPrint = null; // the last capture's 40x30 two-tone bits, while it's being judged
+    setTimeout(() => this.index.flush(), 4000); // anything queued last time
     this.t = 0;
     this.toasts = [];
     this.track = { faces: [], objects: [], t: 0, ot: 0, busy: false };
@@ -44,7 +48,7 @@ export class Game {
       title: new S.Title(this), order: new S.Order(this), field: new S.Viewfinder(this), develop: new S.Develop(this),
       menu: new S.Menu(this), archive: new S.Archive(this), report: new S.Report(this), shop: new S.Shop(this),
       lab: new S.Lab(this), settings: new S.Settings(this), confirm: new S.Confirm(this), ending: new S.Ending(this),
-      nocam: new S.NoCamera(this),
+      nocam: new S.NoCamera(this), index: new S.IndexScreen(this),
     };
     this.state = null;
     this.stateName = '';
@@ -201,6 +205,8 @@ export class Game {
     this.save.exposures++;
     const o = this.order;
     if (o) { o.film = Math.max(0, o.film - 1); o.shots++; }
+    // For the shared index, only if the Recorder shares: the lowest grade, made here.
+    this.indexPrint = this.index.on ? { id: this.save.exposures, px: this.dev.bits(rgba, 640, 480) } : null;
     return {
       id: this.save.exposures, day: this.save.day, time: Date.now(), w: s.w, h: s.h, px,
       sensor: this.tier('sensor'), tone: this.tier('tone'),
@@ -223,10 +229,12 @@ export class Game {
         pick.req.done = true; pick.req.photo = photo.id; pick.req.merit = merit;
         o.earned += merit; this.save.merit += merit; this.save.earned += merit;
         photo.verdict = { ok: true, key: pick.req.key, text: requestText(pick.req), merit, marks: pick.marks || [] };
+        const ip = this.indexPrint;
+        if (LEARNED_LABEL[pick.req.key] && ip && ip.id === photo.id) this.index.file(photo.id, pick.req.key, ip.px);
       } else {
         const f = verdict.focus;
         if (f && f.soft) f.req.asked = true; // shift 5: it asked once; the next photo files
-        photo.verdict = { ok: false, soft: !!(f && f.soft), text: f ? requestText(f.req) : '', why: f ? f.why : 'NO OPEN REQUEST', marks: f ? f.marks || [] : [] };
+        photo.verdict = { ok: false, soft: !!(f && f.soft), key: f ? f.req.key : null, i: f ? f.i : null, text: f ? requestText(f.req) : '', why: f ? f.why : 'NO OPEN REQUEST', marks: f ? f.marks || [] : [] };
         if (o.requests.some((r) => r.key === 'self' && !r.done)) this.save.selfMisses++;
       }
     } else photo.verdict = { ok: false, text: '', why: '', marks: [] };
@@ -235,6 +243,7 @@ export class Game {
     A.learned = learnedFrom(A.emb, this.store.list); // what the Recorder taught it (shift 5 on)
     photo.lines = readout(A, photo);
     photo.found = summarizeFound(A);
+    this.indexPrint = null;
     this.store.put(photo);
     this.persist();
     return A;
@@ -242,9 +251,12 @@ export class Game {
 
   // --- shifts -------------------------------------------------------------------------------
   newGame() {
-    const keep = this.save.settings;
+    const keep = this.save.settings, shared = this.save.shared || [];
     this.save = defaultSave();
     this.save.settings = keep;
+    // Keep the keys to prints already in the index, so they can still be withdrawn; the
+    // exposures they came from are gone (and exposure numbers start again).
+    this.save.shared = shared.map((x) => ({ ...x, photo: null }));
     this.store.clear();
     this.persist();
   }
@@ -260,7 +272,21 @@ export class Game {
 
   filed() { return this.order ? this.order.requests.filter((r) => r.done).length : 0; }
   quotaMet() { return this.order && this.filed() >= this.order.quota; }
-  allDone() { return this.order && this.order.requests.every((r) => r.done); }
+  allDone() { return this.order && this.order.requests.every((r) => r.done || r.withdrawn); }
+  withdrawn() { return this.order ? this.order.requests.filter((r) => r.withdrawn).length : 0; }
+
+  // Shift 5: the Recorder answered NO to "YOU SURE?". That request is struck off for the rest
+  // of the shift and the refusal goes on the Recorder's record (ENDINGS.md).
+  refuse(photo) {
+    const o = this.order, v = photo.verdict, r = o && v && o.requests[v.i];
+    if (!r || r.key !== v.key || r.done || r.withdrawn) return false;
+    r.withdrawn = true;
+    v.refused = true;
+    this.save.refusals = (this.save.refusals || 0) + 1;
+    this.store.put(photo);
+    this.persist();
+    return true;
+  }
 
   // Close the shift: quota bonus or a citation.
   closeShift() {

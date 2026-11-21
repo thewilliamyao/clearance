@@ -3,6 +3,11 @@
 
 export const VERSION = '0.1';
 
+// The shared index (server/ in this folder: a Cloudflare Worker on William's account, deployed
+// Nov 21 2026). ?index=<url> points the game and the index page at another one (local tests:
+// ?index=http://localhost:8787).
+export const INDEX_API = 'https://clearance-index.clearance-index.workers.dev';
+
 const MP = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.1.1';
 const ORT = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist';
 const MPM = 'https://storage.googleapis.com/mediapipe-models';
