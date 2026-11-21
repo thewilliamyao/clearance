@@ -2,11 +2,13 @@
 
 **Play it: https://thewilliamyao.github.io/clearance/** (on a phone or a laptop; allow the camera)
 
-A game for a home-made digicam, prototyped as a web app. The camera faces out, the screen faces you, and the buttons are a big SHUTTER, a D-pad, a round OK button and SELECT. You are Recorder 3-17 of the Office of Civic Record. Each shift the Office hands you a work order, you walk around and photograph what it asks for, and the unit's recognition modules decide whether the photo counts. The requests escalate over seven shifts: colours and shapes, then objects, people, how people feel, what the model thinks of them, and finally you.
+A game for a home-made digicam, prototyped as a web app. The camera faces out, the screen faces you, and the buttons are a SHUTTER, a 4-way control wheel with a round OK button in the middle, and SELECT. You are Recorder 3-17 of the Office of Civic Record. Each shift the Office hands you a work order, you walk around and photograph what it asks for, and the unit's recognition modules decide whether the photo counts. The requests escalate over seven shifts: colours and shapes, then objects, people, how people feel, what the model thinks of them, and finally you.
 
 The picture starts as 40x30 blobs of ink and paper and gets clearer as your clearance rises: more pixels, more tones, then colour.
 
 ![The same room at every grade the camera can earn](docs/ladder.png)
+
+![The unit held sideways: the work order top left, the control wheel on the right](docs/unit.png)
 
 ## Privacy
 
@@ -17,11 +19,11 @@ Everything runs in your browser. The camera picture, your photos and the model's
 | Unit | Phone | Keyboard |
 |---|---|---|
 | SHUTTER | red button, or tap the screen | Space |
-| D-pad | D-pad | arrows or WASD |
-| OK | round OK button | Enter or Z |
-| SELECT | SELECT | Esc or Tab |
+| D-pad | the control wheel | arrows or WASD |
+| OK | OK, in the middle of the wheel | Enter or Z |
+| SELECT | the small ☰ key | Esc or Tab |
 
-In the viewfinder, ◂ ▸ picks the request you're aiming at, ▴ ▾ zooms once you've earned the lens, and SELECT opens the menu. On a phone, Share ▸ Add to Home Screen gives you full screen.
+In the viewfinder the work order is a list in the top left corner. ▴ ▾ picks the request you're aiming at, ◂ ▸ zooms once you've earned the lens, and SELECT opens the menu. When the quota is met the Office offers to end the shift. Hold the phone sideways for the full camera layout; on a phone, Share ▸ Add to Home Screen gives you full screen.
 
 ## How it recognises things
 

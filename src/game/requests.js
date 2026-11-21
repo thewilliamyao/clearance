@@ -163,7 +163,7 @@ export const REQUESTS = {
   // SENTIMENT (shift 4)
   smile: { text: 'SOMEONE SMILING', mod: 'affect', merit: 35, judge: face((f) => f.smile * 1.4, (f) => `JOY ${pct(f.smile)} · NEED 36%`) },
   nosmile: { text: 'SOMEONE NOT SMILING', mod: 'affect', merit: 30, judge: face((f) => (f.smile < 0.1 && f.eyesClosed < 0.5 ? 0.9 : 0.2), (f) => `JOY ${pct(f.smile)} · MUST BE UNDER 10%`) },
-  eyesclosed: { text: 'SOMEONE WITH THEIR EYES CLOSED', mod: 'affect', merit: 45, judge: face((f) => f.eyesClosed * 1.3, (f) => `EYES CLOSED ${pct(f.eyesClosed)} · NEED 40%`) },
+  eyesclosed: { text: 'SOMEONE WITH THEIR EYES CLOSED', short: 'SOMEONE WITH EYES CLOSED', mod: 'affect', merit: 45, judge: face((f) => f.eyesClosed * 1.3, (f) => `EYES CLOSED ${pct(f.eyesClosed)} · NEED 40%`) },
   away: { text: 'SOMEONE LOOKING AWAY', mod: 'affect', merit: 35, judge: face((f) => Math.abs(f.yaw), (f) => `HEAD TURNED ${Math.abs(f.yawDeg)}° · NEED 19°`) },
   atyou: { text: 'SOMEONE LOOKING AT YOU', mod: 'affect', merit: 40, judge: face((f) => (Math.abs(f.yaw) < 0.25 && f.eyesClosed < 0.4 ? 0.95 : 0.2), (f) => `HEAD TURNED ${Math.abs(f.yawDeg)}° · MUST FACE THE LENS`) },
   surprise: { text: 'SOMEONE SURPRISED', mod: 'affect', merit: 50, judge: face((f) => f.read.SURPRISE * 1.25, (f) => `SURPRISE ${pct(f.read.SURPRISE)} · NEED 40%`) },
@@ -174,7 +174,7 @@ export const REQUESTS = {
   waiting: { text: 'SOMEONE WAITING', mod: 'intent', merit: 45, judge: concept('waiting', 0.35, true) },
   hurry: { text: 'SOMEONE IN A HURRY', mod: 'intent', merit: 50, judge: concept('hurry', 0.35, true) },
   tired: { text: 'SOMEONE TIRED', mod: 'intent', merit: 50, judge: concept('tired', 0.33, true) },
-  outofplace: { text: 'SOMETHING THAT DOES NOT BELONG', mod: 'intent', merit: 55, judge: concept('outofplace', 0.35) },
+  outofplace: { text: 'SOMETHING THAT DOES NOT BELONG', short: 'SOMETHING OUT OF PLACE', mod: 'intent', merit: 55, judge: concept('outofplace', 0.35) },
   notbelong: { text: 'SOMEONE WHO DOES NOT BELONG', mod: 'intent', merit: 60, judge: concept('notbelong', 0.33, true) },
   suspicious: { text: 'SOMETHING SUSPICIOUS', mod: 'intent', merit: 55, judge: concept('suspicious', 0.35) },
   abandoned: { text: 'SOMETHING ABANDONED', mod: 'intent', merit: 45, judge: concept('abandoned', 0.4) },
@@ -182,7 +182,7 @@ export const REQUESTS = {
 
   // CONTINUITY (shift 6)
   again: {
-    text: 'THE SUBJECT OF EXPOSURE #', mod: 'intent', merit: 70, dynamic: true,
+    text: 'THE SUBJECT OF EXPOSURE #', short: 'SUBJECT #', mod: 'intent', merit: 70, dynamic: true,
     judge: (A, ctx) => {
       if (!A.emb) return { ok: false, score: 0, why: 'INTENT MODULE NOT INSTALLED' };
       const ph = ctx.photos.find((p) => p.id === ctx.arg);
@@ -200,7 +200,7 @@ export const REQUESTS = {
     },
   },
   seen: {
-    text: 'SOMEONE YOU PHOTOGRAPHED BEFORE', mod: 'intent', merit: 80,
+    text: 'SOMEONE YOU PHOTOGRAPHED BEFORE', short: 'SOMEONE YOU FILED BEFORE', mod: 'intent', merit: 80,
     judge: (A, ctx) => {
       if (!A.emb) return { ok: false, score: 0, why: 'INTENT MODULE NOT INSTALLED' };
       if (!people(A).length && !(A.faces && A.faces.length)) return { ok: false, score: 0, why: 'NO SUBJECT ON RECORD' };
@@ -209,7 +209,7 @@ export const REQUESTS = {
     },
   },
   unaware: {
-    text: 'SOMEONE WHO HAS NOT NOTICED YOU', mod: 'objects', merit: 60,
+    text: 'SOMEONE WHO HAS NOT NOTICED YOU', short: 'SOMEONE UNAWARE OF YOU', mod: 'objects', merit: 60,
     judge: (A) => {
       if (!A.objects) return { ok: false, score: 0, why: 'INVENTORY MODULE NOT INSTALLED' };
       const ps = people(A);
@@ -234,6 +234,13 @@ export const REQUESTS = {
 export function requestText(req) {
   const def = REQUESTS[req.key];
   return def.dynamic ? `${def.text}${String(req.arg).padStart(3, '0')} AGAIN` : def.text;
+}
+
+// The same, short enough for the task list in the viewfinder.
+export function requestShort(req) {
+  const def = REQUESTS[req.key];
+  if (!def.short) return requestText(req);
+  return def.dynamic ? `${def.short}${String(req.arg).padStart(3, '0')} AGAIN` : def.short;
 }
 
 // Judge one exposure against the open requests. The focused request wins if it matches.

@@ -5,7 +5,7 @@ import { fitText } from '../engine/font.js';
 import { desk, paper, rule, seal, header, stamp, list, notice, bar, dim, hints, drawText, textWidth, wrapText, LINE_H } from './ui.js';
 import { SENSORS, TONES, LENSES, FILMS } from './tiers.js';
 import { DAYS, LAST_DAY, RECORDER } from './days.js';
-import { REQUESTS, requestText } from './requests.js';
+import { REQUESTS, requestText, requestShort } from './requests.js';
 import { SHOP } from './game.js';
 import { MODULES, MODULE_ORDER, RUNTIME_MB } from '../vision/modules.js';
 import { analyzeCV, FOCUS } from '../vision/cv.js';
@@ -170,13 +170,19 @@ export class Order {
 }
 
 // =========================================================================== VIEWFINDER
+// The work order is a list in the top left corner. ▴ ▾ moves the marker to the request
+// you're aiming at (it wins if a photo matches more than one), ◂ ▸ zooms out and in like a
+// W/T lever, OK hides the overlays, SELECT opens the menu. Once the quota is met the Office
+// pops up a bubble offering to end the shift.
 const ZOOMS = [1, 1.5, 2, 3, 4];
 export class Viewfinder {
-  constructor(g) { this.g = g; this.focus = 0; this.zoom = 1; this.hintT = 0; }
+  constructor(g) { this.g = g; this.focus = 0; this.zoom = 1; this.hintT = 0; this.zoomT = 0; this.bubble = null; }
   enter(arg, prev) {
     const g = this.g;
     this.zoom = Math.min(this.zoom, g.maxZoom);
     this.fixFocus(0);
+    this.bubble = null;
+    if (arg === 'quota' && g.order && !g.order.closed) this.popBubble('quota');
     if (prev === 'order' && g.day === 1 && !g.order.shots) this.hintT = 7;
     if (g.day === LAST_DAY && g.save.selfMisses >= 2) g.toast(g.save.selfMisses >= 4 ? 'TURN THE UNIT AROUND.' : 'HINT: THE RECORDER IS HOLDING THE UNIT.', 4);
     g.installModules();
@@ -190,36 +196,62 @@ export class Viewfinder {
     if (k < 0) k = 0; else k = (k + dir + open.length) % open.length;
     this.focus = open[k];
   }
+  popBubble(kind) {
+    this.bubble = { kind, t: 0, sel: 0 };
+    this.hintT = 0;
+    this.g.sfx.alarm();
+    this.g.buzz([20, 60, 20]);
+  }
   update(dt) {
     const g = this.g, i = g.input;
     this.hintT = Math.max(0, this.hintT - dt);
-    if (i.hit('LEFT')) { this.fixFocus(-1); g.sfx.move(); }
-    if (i.hit('RIGHT')) { this.fixFocus(1); g.sfx.move(); }
-    if (i.hit('UP') || i.hit('DOWN')) {
+    this.zoomT = Math.max(0, this.zoomT - dt);
+    g.updateTracking();
+    if (this.bubble) return this.updateBubble(dt);
+    if (i.hit('UP')) { this.fixFocus(-1); g.sfx.move(); }
+    if (i.hit('DOWN')) { this.fixFocus(1); g.sfx.move(); }
+    if (i.hit('LEFT') || i.hit('RIGHT')) {
       if (g.maxZoom <= 1) { g.toast('LENS I HAS NO ZOOM · REQUISITION LENS II'); g.sfx.deny(); }
       else {
         const zs = ZOOMS.filter((z) => z <= g.maxZoom);
-        const k = Math.max(0, zs.indexOf(this.zoom) + (i.hit('UP') ? 1 : -1));
-        this.zoom = zs[Math.min(zs.length - 1, k)];
-        g.toast(`ZOOM ${this.zoom}×`, 0.8); g.sfx.move();
+        const k = Math.max(0, Math.min(zs.length - 1, zs.indexOf(this.zoom) + (i.hit('RIGHT') ? 1 : -1)));
+        this.zoom = zs[k];
+        this.zoomT = 1.4;
+        g.sfx.move();
       }
     }
     if (i.hit('OK')) { g.save.settings.hud = (g.save.settings.hud + 1) % 2; g.persist(); g.sfx.blip(); }
     if (i.hit('SELECT')) { g.scr.snapshot(); g.sfx.blip(); return g.go('menu'); }
     if (i.hit('SHUTTER') || (i.tapped && g.save.settings.tapShoot)) this.shoot();
-    g.updateTracking();
+  }
+  // The bubble: END SHIFT or KEEP SHOOTING. SELECT or the shutter also keeps shooting.
+  updateBubble(dt) {
+    const g = this.g, i = g.input, b = this.bubble;
+    b.t += dt;
+    if (b.t < 0.3) return; // let it land before it takes presses
+    const choices = b.kind === 'quota' ? 2 : 1;
+    if (choices > 1 && (i.hit('LEFT') || i.hit('RIGHT') || i.hit('UP') || i.hit('DOWN'))) { b.sel = 1 - b.sel; g.sfx.move(); }
+    if (i.hit('SELECT') || i.hit('SHUTTER')) {
+      if (choices > 1) { this.bubble = null; g.sfx.blip(); }
+      else if (i.hit('SELECT')) { g.scr.snapshot(); g.sfx.blip(); g.go('menu'); }
+      return;
+    }
+    if (i.hit('OK') || i.tapped) {
+      if (b.sel === 0) { g.sfx.confirm(); g.closeShift(); return g.go('report'); }
+      this.bubble = null; g.sfx.blip();
+    }
   }
   shoot() {
     const g = this.g, o = g.order;
     if (!o) return;
-    if (o.film <= 0) { g.sfx.deny(); g.toast('OUT OF FILM · SELECT ▸ END SHIFT'); return; }
+    if (o.film <= 0) { g.sfx.deny(); this.popBubble('film'); return; }
     if (!g.camera.ready) { g.sfx.deny(); g.toast('NO PICTURE · CHECK THE CAMERA'); return; }
     const photo = g.capture(this.zoom);
     if (!photo) return;
     g.go('develop', photo);
   }
   draw() {
-    const g = this.g, scr = g.scr, P = g.P, o = g.order;
+    const g = this.g, scr = g.scr, P = g.P;
     g.renderLive(this.zoom);
     // Live tracking.
     g.track.objects.slice(0, 8).forEach((ob) => { if (ob.score < 0.4) return; const [x, y, w, h] = box(ob.box); shadowRect(scr, x, y, w, h, P, true); tag(scr, ob.label.toUpperCase(), x, y, P.ink, P.paper); });
@@ -230,25 +262,18 @@ export class Viewfinder {
     scr.rect(W / 2 - 4, H / 2 - 1, 9, 3, P.ink); scr.rect(W / 2 - 1, H / 2 - 4, 3, 9, P.ink);
     scr.hline(W / 2 - 3, W / 2 + 3, H / 2, P.paper); scr.vline(W / 2, H / 2 - 3, H / 2 + 3, P.paper);
     if (g.save.settings.hud === 0) this.hud();
-    if (this.hintT > 0) notice(scr, 'FRAME THE SUBJECT IN THE BRACKETS AND PRESS THE SHUTTER.\n◂ ▸ SWITCHES REQUEST · SELECT OPENS THE MENU', P, 150);
+    if (this.zoomT > 0 && g.maxZoom > 1) this.zoomBar();
+    if (this.bubble) return this.drawBubble();
+    if (this.hintT > 0) notice(scr, 'FRAME THE SUBJECT IN THE BRACKETS AND PRESS THE SHUTTER.\n▴ ▾ PICKS THE REQUEST · SELECT OPENS THE MENU', P, 150);
     for (const t of g.toasts) notice(scr, t.text, P, 104);
   }
   hud() {
     const g = this.g, scr = g.scr, P = g.P, o = g.order;
-    scr.rect(0, 0, W, 11, P.ink);
-    const open = this.open();
-    if (!o || !open.length) drawText(scr, o ? 'ALL REQUESTS FILED · SELECT ▸ END SHIFT' : 'NO WORK ORDER', 4, 2, P.paper);
-    else {
-      const r = o.requests[this.focus], def = REQUESTS[r.key];
-      const right = `${def.merit ? '+' + def.merit + '  ' : ''}${open.indexOf(this.focus) + 1}/${open.length}`;
-      drawText(scr, right, W - 4, 2, P.paper, { align: 'right' });
-      drawText(scr, '◂ ' + fitText(requestText(r), W - textWidth(right) - 30) + ' ▸', 4, 2, P.paper);
-    }
+    this.tasks();
     scr.rect(0, H - 11, W, 11, P.ink);
     const film = o ? o.film : 0;
     drawText(scr, `FILM ${String(film).padStart(2, '0')}`, 4, H - 9, film <= 2 && blink(g.t, 3) ? P.stamp : P.paper);
     drawText(scr, `MERIT ${g.save.merit}`, 62, H - 9, P.paper);
-    drawText(scr, `QUOTA ${g.filed()}/${o ? o.quota : 0}`, 128, H - 9, P.paper);
     let x = W - 4;
     const mods = g.enabledModules();
     for (let k = mods.length - 1; k >= 0; k--) {
@@ -257,8 +282,93 @@ export class Viewfinder {
       x -= drawText(scr, txt, x, H - 9, s.state === 'ready' ? P.paper : P.mid, { align: 'right' }) + 4;
     }
     if (this.zoom > 1) drawText(scr, `${this.zoom}×`, x - 2, H - 9, P.paper, { align: 'right' });
-    if (g.track.faces.length && blink(g.t, 1.2)) scr.disc(W - 6, 17, 2, P.stamp);
+    if (!this.bubble && g.track.faces.length && blink(g.t, 1.2)) scr.disc(W - 6, 6, 2, P.stamp);
   }
+  // Every request of the work order, top left: □ open, ▸ the one you're aiming at, ✓ filed.
+  tasks() {
+    const g = this.g, scr = g.scr, P = g.P, o = g.order;
+    if (!o) { drawText(scr, 'NO WORK ORDER', 4, 3, P.paper, { bg: P.ink, pad: 2 }); return; }
+    const rs = o.requests, filed = g.filed(), met = filed >= o.quota;
+    const head = met ? `QUOTA MET · ${filed} FILED` : `FILE ${o.quota - filed} MORE · ${filed}/${o.quota}`;
+    const labels = rs.map((r) => fitText(requestShort(r), 170));
+    const w = Math.max(textWidth(head) + 9, ...labels.map((l) => textWidth(l) + 19));
+    const x = 2, y = 2, h = 14 + rs.length * 9;
+    scr.rect(x, y, w, h, P.ink);
+    drawText(scr, head, x + 4, y + 3, met ? P.stamp : P.paper);
+    for (let k = x + 3; k < x + w - 3; k += 2) scr.pset(k, y + 11, P.mid);
+    rs.forEach((r, k) => {
+      const ry = y + 14 + k * 9, on = !r.done && k === this.focus;
+      if (on) scr.rect(x + 1, ry - 1, w - 2, 9, P.paper);
+      const fg = on ? P.ink : r.done ? P.mid : P.paper;
+      drawText(scr, r.done ? '✓' : on ? '▸' : '□', x + 4, ry, fg);
+      const tw = drawText(scr, labels[k], x + 14, ry, fg);
+      if (r.done) scr.hline(x + 13, x + 14 + tw, ry + 3, P.mid);
+    });
+  }
+  // W ──●── T, while zooming.
+  zoomBar() {
+    const g = this.g, scr = g.scr, P = g.P;
+    const zs = ZOOMS.filter((z) => z <= g.maxZoom), k = Math.max(0, zs.indexOf(this.zoom));
+    const x0 = 124, x1 = 196, y = H - 22, at = (j) => Math.round(x0 + (j / (zs.length - 1)) * (x1 - x0));
+    scr.rect(x0 - 17, y - 6, x1 - x0 + 34, 13, P.ink);
+    drawText(scr, 'W', x0 - 13, y - 3, P.paper);
+    drawText(scr, 'T', x1 + 7, y - 3, P.paper);
+    scr.hline(x0, x1, y, P.mid);
+    zs.forEach((z, j) => scr.vline(at(j), y - 1, y + 1, P.paper));
+    scr.hline(x0, at(k), y, P.paper);
+    scr.rect(at(k) - 2, y - 3, 5, 7, P.paper);
+    drawText(scr, `${this.zoom}×`, W / 2, y - 16, P.paper, { align: 'center', bg: P.ink, pad: 2 });
+  }
+  // The Office pipes up from the top right corner: a speech bubble with its seal.
+  drawBubble() {
+    const g = this.g, scr = g.scr, P = g.P, b = this.bubble, o = g.order;
+    const quota = b.kind === 'quota';
+    const title = quota ? 'QUOTA MET' : 'OUT OF FILM';
+    const body = quota
+      ? `${g.filed()} OF ${o.requests.length} REQUESTS FILED. RETURN FOR REVIEW NOW AND COLLECT A +${Math.round(o.earned * 0.2)} DILIGENCE BONUS.`
+      : 'NO EXPOSURES LEFT ON THIS SHIFT. RETURN FOR REVIEW.';
+    const lines = wrapText(body, 172);
+    const w = 190, h = 31 + lines.length * LINE_H + 19;
+    const x = W - w - 5, y = 31, sx = W - 15, sy = 13;
+    // Pop: the bubble grows out of the seal with a little overshoot.
+    const k = Math.min(1, b.t / 0.16), e = 1 + 2.7 * (k - 1) ** 3 + 1.7 * (k - 1) ** 2;
+    seal(scr, sx, sy, 9, P.ink, P.paper);
+    if (k < 1) {
+      const bw = Math.max(6, Math.round(w * e)), bh = Math.max(6, Math.round(h * e));
+      bubbleBox(scr, x + w - bw, y, bw, bh, P);
+      return;
+    }
+    bubbleBox(scr, x, y, w, h, P);
+    // The tail, up to the seal.
+    for (let j = 0; j <= 8; j++) {
+      const ty = y - j, half = Math.round((8 - j) * 0.6);
+      const cx = sx - 2 + Math.round(j * 0.25);
+      scr.hline(cx - half, cx + half, ty, P.paper);
+      scr.pset(cx - half - 1, ty, P.ink); scr.pset(cx + half + 1, ty, P.ink);
+    }
+    drawText(scr, 'THE OFFICE', x + 8, y + 5, P.ink);
+    drawText(scr, title, x + 8, y + 14, P.stamp, { scale: 1 });
+    scr.hline(x + 8, x + 8 + textWidth(title), y + 22, P.stamp);
+    lines.forEach((l, j) => drawText(scr, l, x + 8, y + 28 + j * LINE_H, P.ink));
+    const by = y + h - 15;
+    const labels = quota ? ['END SHIFT', 'KEEP SHOOTING'] : ['END SHIFT'];
+    const bw = quota ? 83 : w - 16;
+    labels.forEach((label, j) => {
+      const bx = x + 8 + j * (bw + 8);
+      if (b.sel === j) scr.rect(bx, by - 3, bw, 13, P.ink); else scr.frame(bx, by - 3, bw, 13, P.ink);
+      drawText(scr, label, bx + bw / 2, by, b.sel === j ? P.paper : P.ink, { align: 'center' });
+    });
+  }
+}
+
+// A paper bubble with rounded corners and a drop shadow.
+function bubbleBox(scr, x, y, w, h, P) {
+  scr.checker(x + 3, y + 3, w, h, P.ink);
+  scr.rect(x + 1, y, w - 2, h, P.paper);
+  scr.rect(x, y + 1, w, h - 2, P.paper);
+  scr.hline(x + 2, x + w - 3, y, P.ink); scr.hline(x + 2, x + w - 3, y + h - 1, P.ink);
+  scr.vline(x, y + 2, y + h - 3, P.ink); scr.vline(x + w - 1, y + 2, y + h - 3, P.ink);
+  scr.pset(x + 1, y + 1, P.ink); scr.pset(x + w - 2, y + 1, P.ink); scr.pset(x + 1, y + h - 2, P.ink); scr.pset(x + w - 2, y + h - 2, P.ink);
 }
 
 // =========================================================================== DEVELOP
@@ -307,7 +417,8 @@ export class Develop {
     const g = this.g, o = g.order, v = this.photo.verdict;
     if (v && v.ok && v.key === 'self') return g.go('ending', 'filed');
     if (o && (g.allDone() || o.film <= 0)) { g.closeShift(); return g.go('report'); }
-    if (v && v.ok && o && g.filed() === o.quota) g.toast('QUOTA MET · KEEP FILING OR SELECT ▸ END SHIFT', 3.5);
+    // Quota met (or more filed after it): the Office offers to end the shift.
+    if (v && v.ok && o && g.quotaMet()) return g.go('field', 'quota');
     g.go('field');
   }
   draw() {
@@ -640,7 +751,7 @@ function shopNote(r) {
   return {
     sensor: 'MORE PIXELS. SHARPER EVIDENCE PAYS MORE MERIT.',
     tone: 'MORE TONES, THEN COLOUR.',
-    lens: 'DIGITAL ZOOM WITH ▴ ▾. SUBJECTS NEED NOT KNOW.',
+    lens: 'DIGITAL ZOOM WITH ◂ ▸. SUBJECTS NEED NOT KNOW.',
     film: 'MORE EXPOSURES PER SHIFT.',
     tracking: 'LIVE BOXES ON EVERY OBJECT THE INVENTORY KNOWS.',
   }[r.track];
@@ -658,6 +769,7 @@ export class Settings {
     const loading = models.filter((id) => st(id) === 'loading');
     return [
       { id: 'theme', label: 'PALETTE', value: `◂ ${(THEMES.find((x) => x.id === s.theme) || THEMES[0]).name} ▸` },
+      { id: 'body', label: 'BODY', value: `◂ ${s.body === 'graphite' ? 'GRAPHITE' : 'SILVER'} ▸` },
       { id: 'sound', label: 'SOUND', value: s.sound ? 'ON' : 'OFF' },
       { id: 'haptics', label: 'VIBRATION', value: s.haptics ? 'ON' : 'OFF' },
       { id: 'facing', label: 'CAMERA', value: s.facing === 'user' ? 'FRONT' : 'BACK' },
@@ -678,6 +790,7 @@ export class Settings {
     if (!dir && !ok) return;
     g.sfx.blip();
     if (id === 'theme') { const k = THEMES.findIndex((x) => x.id === s.theme); s.theme = THEMES[(k + (dir || 1) + THEMES.length) % THEMES.length].id; g.dev.ramps.clear(); }
+    else if (id === 'body') s.body = s.body === 'graphite' ? 'silver' : 'graphite';
     else if (id === 'sound') { s.sound = !s.sound; g.sfx.on = s.sound; }
     else if (id === 'haptics') { s.haptics = !s.haptics; g.buzz(30); }
     else if (id === 'facing') { s.facing = s.facing === 'user' ? 'environment' : 'user'; g.camera.start(s.facing); }

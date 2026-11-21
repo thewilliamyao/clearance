@@ -17,7 +17,7 @@ export function defaultSave() {
     citations: 0,
     ending: null,
     selfMisses: 0,
-    settings: { theme: 'ledger', sound: true, haptics: true, tapShoot: true, facing: 'environment', hud: 0 },
+    settings: { theme: 'ledger', body: 'silver', sound: true, haptics: true, tapShoot: true, facing: 'environment', hud: 0 },
     dev: { unlockAll: false },
   };
 }
