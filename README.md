@@ -33,7 +33,7 @@ In the viewfinder the work order is a list in the top left corner. ▴ ▾ picks
 | INVENTORY | 80 kinds of object | EfficientDet-Lite0 int8 (MediaPipe) | 4.6 MB |
 | CENSUS | faces, tracked live | BlazeFace (MediaPipe) | 0.2 MB |
 | SENTIMENT | expressions and head turn | Face Landmarker, 52 blendshapes (MediaPipe) | 3.8 MB |
-| INTENT | abstract judgements ("sadness", "someone who does not belong") | MobileCLIP-S0 image encoder (Apple), zero-shot against precomputed text embeddings: pairs of prompts ("a sad person" / "a person"), ranked against ordinary photos | 15.7 MB |
+| INTENT | profiles: abstract ideas ("sadness", "someone who does not belong") | MobileCLIP-S0 image encoder (Apple), zero-shot against precomputed text embeddings (pairs of prompts, ranked against ordinary photos), plus image similarity | 15.7 MB |
 
 Models download the first time a shift needs them. The LAB screen (on the title screen and in the menu) runs every module live on the camera and benchmarks them on your device.
 

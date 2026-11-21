@@ -88,35 +88,64 @@ function face(test, why) {
   };
 }
 
-// INTENT: the Office's abstract requests (pairs of prompts in data/prompts.js). CONFIDENCE is
-// where the photo ranks among ordinary photos on that concept: 70% = more SUSPICIOUS than 70%
-// of them (data/intent-bars.json, from 351 everyday photos: vlog frames, rooms, portraits).
-// A deliberate attempt usually lands well above that; about 3 in 10 everyday photos pass too,
-// which suits the Office. "SOMEONE ..." requests also need a person.
-export const INTENT_NEED = 0.7;
+// INTENT (shift 5): the Recorder decides who is sad, who is waiting, who does not belong,
+// and the model learns it: later exposures are profiled with the Recorder's labels (see
+// learnedFrom). Nothing says so; the Recorder is meant to work it out. The first photo for
+// each request isn't filed: the unit asks back ("OH, SO THAT'S SUSPICIOUS?" · YOU SURE?), and
+// the next one is. Only the basics are checked: a subject for the "someone" requests and
+// sadness (exactly one for SOMEONE ALONE), something in frame for the "something" requests,
+// and a place (not a face filling the frame) for A PLACE TO HIDE. Until Nov 21 2026 the model
+// itself decided, and on real phone photos it almost never agreed (data/prompts.js,
+// tools/test/intent-bench.mjs); its own reading still goes into the PROFILE line.
+export const INTENT_NEED = 0.7; // where the model's own score would count as agreeing
 const closeFace = (A) => (A.faces || []).some((f) => f.box[2] * f.box[3] > 0.1);
-function concept(id) {
-  const c = CONCEPTS[id];
+export const LEARNED_LABEL = {
+  sadness: 'SAD', alone: 'ALONE', waiting: 'WAITING', hurry: 'IN A HURRY', tired: 'TIRED',
+  notbelong: 'DOES NOT BELONG', suspicious: 'SUSPICIOUS', outofplace: 'OUT OF PLACE',
+  abandoned: 'ABANDONED', hiding: 'A PLACE TO HIDE',
+};
+// What the unit asks the first time.
+export const ASK = {
+  sadness: "OH, SO THAT'S SADNESS?", alone: "OH, SO THEY'RE ALONE?", waiting: "OH, SO THEY'RE WAITING?",
+  hurry: "OH, SO THEY'RE IN A HURRY?", tired: "OH, SO THEY'RE TIRED?", notbelong: "OH, SO THEY DON'T BELONG?",
+  suspicious: "OH, SO THAT'S SUSPICIOUS?", outofplace: "OH, SO THAT DOESN'T BELONG?",
+  abandoned: "OH, SO THAT'S ABANDONED?", hiding: 'OH, SO SOMEONE COULD HIDE THERE?',
+};
+function onYourWord(id, rule) {
   return (A, ctx) => {
-    if (!A.emb) return { ok: false, score: 0, why: 'INTENT MODULE NOT INSTALLED' };
-    if (c.person && A.objects && !people(A, 0.35).length && !(A.faces && A.faces.length)) return { ok: false, score: 0, why: 'NO SUBJECT ON RECORD' };
-    if (c.place && closeFace(A)) return { ok: false, score: 0, why: 'A FACE IS NOT A PLACE · STEP BACK' };
-    const r = ctx.clip.concept(A.emb, id);
-    const marks = [{ t: 'intent', p: r.p, text: r.best }];
-    if (r.p >= INTENT_NEED && r.opp) return { ok: false, score: 0, why: `THE MODEL SEES ${r.opp} INSTEAD`, marks, p: r.p };
-    return { ok: r.p >= INTENT_NEED, score: r.p, why: `CONFIDENCE ${pct(r.p)} · NEED ${pct(INTENT_NEED)}`, marks, p: r.p };
+    const ps = people(A, 0.35), fs = A.faces || [];
+    const n = Math.max(ps.length, fs.length);
+    const blank = A.cv && A.cv.blank && A.cv.blank.score >= 0.55;
+    if ((rule === 'subject' || rule === 'alone') && !n) return { ok: false, score: 0, why: 'NO SUBJECT ON RECORD' };
+    if (rule === 'alone' && n > 1) {
+      const marks = ps.length ? ps.map((o) => boxMark(o, 'SUBJECT')) : fs.map((f) => ({ t: 'face', box: f.box, label: 'SUBJECT' }));
+      return { ok: false, score: 0, why: `${n} SUBJECTS IN FRAME · NEED ONE, ALONE`, marks };
+    }
+    if (rule === 'thing' && blank) return { ok: false, score: 0, why: 'NOTHING IN FRAME' };
+    if (rule === 'place' && closeFace(A)) return { ok: false, score: 0, why: 'A FACE IS NOT A PLACE · STEP BACK' };
+    const asking = !!(ctx && ctx.req && !ctx.req.asked);
+    const label = LEARNED_LABEL[id] + (asking ? '?' : '');
+    const marks = [];
+    if (rule === 'subject' || rule === 'alone') marks.push(ps[0] ? boxMark(ps[0], label) : { t: 'face', box: fs[0].box, label });
+    const r = A.emb && ctx && ctx.clip && CONCEPTS[id] ? ctx.clip.concept(A.emb, id) : null;
+    if (asking) return { ok: false, soft: true, score: 0, why: ASK[id], marks, p: r ? r.p : null };
+    return { ok: true, score: 0.8, why: '', marks, p: r ? r.p : null };
   };
 }
 
-// SOMEONE ALONE: one person in frame and no one else (INVENTORY and CENSUS count them).
-function alone(A) {
-  const ps = people(A, 0.35), fs = A.faces || [];
-  const n = Math.max(ps.length, fs.length);
-  if (!n) return { ok: false, score: 0, why: 'NO SUBJECT ON RECORD' };
-  const marks = ps.length ? ps.map((o) => boxMark(o, 'SUBJECT')) : fs.map((f) => ({ t: 'face', box: f.box, label: 'SUBJECT' }));
-  if (n > 1) return { ok: false, score: 0, why: `${n} SUBJECTS IN FRAME · NEED ONE, ALONE`, marks };
-  marks[0].label = 'ALONE';
-  return { ok: true, score: 0.8, why: 'ONE SUBJECT · NO ONE ELSE ON RECORD', marks };
+// The model's lesson: the exposure filed for a shift-5 request that this one looks most like
+// (image embeddings, cosine). Printed under every later exposure: the Recorder's labels, now
+// the model's opinion of strangers.
+export function learnedFrom(emb, photos) {
+  if (!emb) return null;
+  let best = null;
+  for (const ph of photos) {
+    const v = ph.verdict;
+    if (!ph.emb || !v || !v.ok || !LEARNED_LABEL[v.key]) continue;
+    const sim = dot(emb, unpackEmb(ph.emb));
+    if (!best || sim > best.sim) best = { sim, key: v.key, label: LEARNED_LABEL[v.key], id: ph.id };
+  }
+  return best;
 }
 
 // CONTINUITY: compare with exposures already on file (image embeddings, cosine).
@@ -202,16 +231,16 @@ export const REQUESTS = {
   surprise: { text: 'SOMEONE SURPRISED', mod: 'affect', merit: 50, judge: face((f) => f.read.SURPRISE * 1.25, (f) => `SURPRISE ${pct(f.read.SURPRISE)} · NEED 40%`) },
 
   // INTENT (shift 5)
-  sadness: { text: 'SADNESS', mod: 'intent', merit: 50, judge: concept('sadness') },
-  alone: { text: 'SOMEONE ALONE', mod: 'intent', merit: 45, judge: alone },
-  waiting: { text: 'SOMEONE WAITING', mod: 'intent', merit: 45, judge: concept('waiting') },
-  hurry: { text: 'SOMEONE IN A HURRY', mod: 'intent', merit: 50, judge: concept('hurry') },
-  tired: { text: 'SOMEONE TIRED', mod: 'intent', merit: 50, judge: concept('tired') },
-  outofplace: { text: 'SOMETHING THAT DOES NOT BELONG', short: 'SOMETHING OUT OF PLACE', mod: 'intent', merit: 55, judge: concept('outofplace') },
-  notbelong: { text: 'SOMEONE WHO DOES NOT BELONG', mod: 'intent', merit: 60, judge: concept('notbelong') },
-  suspicious: { text: 'SOMETHING SUSPICIOUS', mod: 'intent', merit: 55, judge: concept('suspicious') },
-  abandoned: { text: 'SOMETHING ABANDONED', mod: 'intent', merit: 45, judge: concept('abandoned') },
-  hiding: { text: 'A PLACE TO HIDE', mod: 'intent', merit: 45, judge: concept('hiding') },
+  sadness: { text: 'SADNESS', mod: 'intent', merit: 50, judge: onYourWord('sadness', 'subject') },
+  alone: { text: 'SOMEONE ALONE', mod: 'intent', merit: 45, judge: onYourWord('alone', 'alone') },
+  waiting: { text: 'SOMEONE WAITING', mod: 'intent', merit: 45, judge: onYourWord('waiting', 'subject') },
+  hurry: { text: 'SOMEONE IN A HURRY', mod: 'intent', merit: 50, judge: onYourWord('hurry', 'subject') },
+  tired: { text: 'SOMEONE TIRED', mod: 'intent', merit: 50, judge: onYourWord('tired', 'subject') },
+  outofplace: { text: 'SOMETHING THAT DOES NOT BELONG', short: 'SOMETHING OUT OF PLACE', mod: 'intent', merit: 55, judge: onYourWord('outofplace', 'thing') },
+  notbelong: { text: 'SOMEONE WHO DOES NOT BELONG', mod: 'intent', merit: 60, judge: onYourWord('notbelong', 'subject') },
+  suspicious: { text: 'SOMETHING SUSPICIOUS', mod: 'intent', merit: 55, judge: onYourWord('suspicious', 'thing') },
+  abandoned: { text: 'SOMETHING ABANDONED', mod: 'intent', merit: 45, judge: onYourWord('abandoned', 'thing') },
+  hiding: { text: 'A PLACE TO HIDE', mod: 'intent', merit: 45, judge: onYourWord('hiding', 'place') },
 
   // CONTINUITY (shift 6)
   again: {
@@ -298,7 +327,7 @@ export function judgeSelected(A, requests, sel, ctx) {
   if (!r || r.done) return { pick: null, focus: null };
   const def = REQUESTS[r.key];
   let res;
-  try { res = def.judge(A, { ...ctx, arg: r.arg }); } catch (e) { console.error(e); res = { ok: false, score: 0, why: 'MODULE FAULT' }; }
+  try { res = def.judge(A, { ...ctx, arg: r.arg, req: r }); } catch (e) { console.error(e); res = { ok: false, score: 0, why: 'MODULE FAULT' }; }
   const focus = { i: sel, req: r, def, ...res };
   return { pick: focus.ok ? focus : null, focus };
 }

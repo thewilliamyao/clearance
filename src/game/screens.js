@@ -348,7 +348,7 @@ export class Viewfinder {
       const ry = y + 14 + k * 9, on = !r.done && k === this.focus;
       if (on) scr.rect(x + 1, ry - 1, w - 2, 9, P.paper);
       const fg = on ? P.ink : r.done ? P.mid : P.paper;
-      drawText(scr, r.done ? '✓' : on ? '▸' : '□', x + 4, ry, fg);
+      drawText(scr, r.done ? '✓' : on ? '▸' : r.asked ? '?' : '□', x + 4, ry, fg);
       const tw = drawText(scr, labels[k], x + 14, ry, fg);
       if (r.done) scr.hline(x + 13, x + 14 + tw, ry + 3, P.mid);
     });
@@ -412,6 +412,26 @@ export class Viewfinder {
       drawText(scr, label, bx + bw / 2, by, b.sel === j ? P.paper : P.ink, { align: 'center' });
     });
   }
+}
+
+// Shift 5: the unit asks back instead of filing. Its own voice (INTENT), not the Office's.
+function askBubble(scr, P, question, reveal) {
+  const lines = wrapText(question, 172);
+  const w = 190, h = 31 + lines.length * LINE_H + 6;
+  const x = W - w - 5, y = 41, sx = W - 15, sy = 23; // below ● CONTINUE
+  const k = Math.min(1, reveal), e = 1 + 2.7 * (k - 1) ** 3 + 1.7 * (k - 1) ** 2;
+  seal(scr, sx, sy, 9, P.ink, P.paper);
+  if (k < 1) { bubbleBox(scr, x + w - Math.max(6, Math.round(w * e)), y, Math.max(6, Math.round(w * e)), Math.max(6, Math.round(h * e)), P); return; }
+  bubbleBox(scr, x, y, w, h, P);
+  for (let j = 0; j <= 8; j++) {
+    const ty = y - j, half = Math.round((8 - j) * 0.6), cx = sx - 2 + Math.round(j * 0.25);
+    scr.hline(cx - half, cx + half, ty, P.paper);
+    scr.pset(cx - half - 1, ty, P.ink); scr.pset(cx + half + 1, ty, P.ink);
+  }
+  drawText(scr, 'INTENT', x + 8, y + 5, P.ink);
+  drawText(scr, 'YOU SURE?', x + 8, y + 14, P.stamp);
+  scr.hline(x + 8, x + 8 + textWidth('YOU SURE?'), y + 22, P.stamp);
+  lines.forEach((l, j) => drawText(scr, l, x + 8, y + 28 + j * LINE_H, P.ink));
 }
 
 // A paper bubble with rounded corners and a drop shadow.
@@ -499,6 +519,7 @@ export class Develop {
     if (this.stamped) {
       const v = ph.verdict, r = Math.min(1, (this.t - this.tStamp) * 6);
       if (v && v.ok) stamp(scr, v.merit ? [['FILED', 3], [fitText(v.text, 220), 1], [`+${v.merit} MERIT`, 2]] : [['FILED', 3], [v.text, 1]], 160, 62, P.stamp, { seed: ph.id, reveal: r, angle: -0.07 });
+      else if (v && v.soft) askBubble(scr, P, v.why, r);
       else stamp(scr, [['NOT FILED', 2], [fitText(v && v.why ? v.why : 'NO OPEN REQUEST', 250), 1]], 160, 52, P.stamp, { seed: ph.id, angle: 0.04, reveal: r });
       if (blink(g.t, 1.5)) drawText(scr, '● CONTINUE', W - 4, 3, P.paper, { align: 'right', bg: P.ink });
     }

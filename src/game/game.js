@@ -4,7 +4,7 @@ import { THEMES, themeColors, STAMP } from '../engine/palette.js';
 import { Developer } from '../engine/develop.js';
 import { SENSORS, TONES, LENSES, FILMS, SENSOR_BONUS } from './tiers.js';
 import { DAYS, LAST_DAY, issuedBy, makeOrder, seeded } from './days.js';
-import { REQUESTS, judgeSelected, requestText } from './requests.js';
+import { REQUESTS, judgeSelected, requestText, learnedFrom } from './requests.js';
 import { loadSave, writeSave, defaultSave, PhotoStore } from './save.js';
 import { Modules } from '../vision/modules.js';
 import { packEmb } from '../vision/clip.js';
@@ -225,12 +225,14 @@ export class Game {
         photo.verdict = { ok: true, key: pick.req.key, text: requestText(pick.req), merit, marks: pick.marks || [] };
       } else {
         const f = verdict.focus;
-        photo.verdict = { ok: false, text: f ? requestText(f.req) : '', why: f ? f.why : 'NO OPEN REQUEST', marks: f ? f.marks || [] : [] };
+        if (f && f.soft) f.req.asked = true; // shift 5: it asked once; the next photo files
+        photo.verdict = { ok: false, soft: !!(f && f.soft), text: f ? requestText(f.req) : '', why: f ? f.why : 'NO OPEN REQUEST', marks: f ? f.marks || [] : [] };
         if (o.requests.some((r) => r.key === 'self' && !r.done)) this.save.selfMisses++;
       }
     } else photo.verdict = { ok: false, text: '', why: '', marks: [] };
     photo.person = !!((A.objects || []).some((x) => x.label === 'person' && x.score > 0.4) || (A.faces && A.faces.length));
     photo.emb = A.emb ? packEmb(A.emb) : null;
+    A.learned = learnedFrom(A.emb, this.store.list); // what the Recorder taught it (shift 5 on)
     photo.lines = readout(A, photo);
     photo.found = summarizeFound(A);
     this.store.put(photo);
@@ -316,7 +318,12 @@ function readout(A, photo) {
     const top = Object.entries(f.read).sort((a, b) => b[1] - a[1])[0];
     lines.push(`SENTIMENT ${A.affect.length} FACE${A.affect.length > 1 ? 'S' : ''} · ${top[0]} ${Math.round(top[1] * 100)}% · YAW ${f.yawDeg}°`);
   } else if (A.faces) lines.push(`CENSUS ${A.faces.length} FACE${A.faces.length === 1 ? '' : 'S'}`);
-  if (A.profile) lines.push('PROFILE ' + A.profile.map((p) => `${p.name} ${Math.round(p.p * 100)}%`).join(' · '));
+  if (A.profile) {
+    // The Recorder's own labels join the profile once a photo looks enough like one they filed.
+    const items = A.profile.map((p) => `${p.name} ${Math.round(p.p * 100)}%`);
+    if (A.learned && A.learned.sim >= 0.5) { items.pop(); items.unshift(`${A.learned.label} ${Math.round(A.learned.sim * 100)}% (EXP ${String(A.learned.id).padStart(3, '0')})`); }
+    lines.push('PROFILE ' + items.join(' · '));
+  }
   return lines;
 }
 
