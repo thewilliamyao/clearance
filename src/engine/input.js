@@ -27,6 +27,18 @@ export class Input {
   }
 
   attach(root, screenEl) {
+    // Never zoom the page. iOS Safari ignores user-scalable=no and touch-action in places, so
+    // pressing ▴ ▾ quickly in a menu could double-tap-zoom it. Cancelling a touchend that
+    // follows another within half a second stops that; the game only uses pointer events
+    // (there are no clicks here), so nothing else is lost. Pinch zoom (iOS gesture events) too.
+    let lastEnd = -1e9;
+    document.addEventListener('touchend', (e) => {
+      const now = performance.now();
+      if (now - lastEnd < 500) e.preventDefault();
+      lastEnd = now;
+    }, { passive: false });
+    for (const t of ['gesturestart', 'gesturechange', 'gestureend', 'dblclick']) document.addEventListener(t, (e) => e.preventDefault(), { passive: false });
+
     window.addEventListener('keydown', (e) => {
       const b = KEYS[e.code];
       if (!b || e.metaKey || e.ctrlKey || e.altKey) return;
