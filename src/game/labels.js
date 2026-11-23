@@ -6,3 +6,8 @@ export const LEARNED_LABEL = {
   notbelong: 'DOES NOT BELONG', suspicious: 'SUSPICIOUS', outofplace: 'OUT OF PLACE',
   abandoned: 'ABANDONED', hiding: 'A PLACE TO HIDE',
 };
+
+// The labels the shared index takes (server/src/rules.js has the same list). Fixed here, before
+// content.js adds the labels of any shift 5 quests William makes in the controller: those
+// stay on the phone (the index only knows these ten).
+export const INDEX_LABELS = Object.freeze(Object.keys(LEARNED_LABEL));

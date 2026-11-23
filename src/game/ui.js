@@ -1,6 +1,7 @@
 // Drawing helpers for the Office's paperwork: desk, paper, seal, rubber stamps, lists.
 import { W, H } from '../engine/screen.js';
 import { drawText, textWidth, wrapText, LINE_H, GLYPH_H } from '../engine/font.js';
+import { t } from './text.js';
 
 export { drawText, textWidth, wrapText, LINE_H, GLYPH_H };
 
@@ -40,7 +41,7 @@ export function seal(scr, cx, cy, r, ink, bg) {
 
 export function header(scr, x, y, w, title, P, right = '') {
   seal(scr, x + 9, y + 9, 8, P.ink, P.paper);
-  drawText(scr, 'OFFICE OF CIVIC RECORD', x + 21, y + 2, P.ink);
+  drawText(scr, t('global.office'), x + 21, y + 2, P.ink);
   drawText(scr, title, x + 21, y + 11, P.ink);
   if (right) drawText(scr, right, x + w, y + 2, P.ink, { align: 'right' });
   rule(scr, x, x + w, y + 21, P);

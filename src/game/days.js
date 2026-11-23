@@ -1,13 +1,16 @@
 // The seven shifts. Each one installs a module, may issue sharper hardware, and hands the
 // Recorder a work order drawn from its pool. The requests escalate from shapes and colours
 // to people, to how people feel, to what the model thinks of them, to the Recorder.
-
-export const RECORDER = '3-17';
+// pick: the work order's slots; each slot draws one of its requests at random (no repeats).
+// quota: how many must be filed. The controller (editor/) edits code (the shift's name),
+// memo, issueNote, quota and pick; William's edits are in content/edits.json (content.js).
+// {RECORDER} and {UNIT} in the text are filled in when it's shown (text.js).
+import { fill } from './text.js';
 
 export const DAYS = [
   {
     n: 1, code: 'ORIENTATION', modules: ['chroma', 'form'],
-    memo: `RECORDER ${RECORDER}: WELCOME TO THE OFFICE OF CIVIC RECORD. YOUR UNIT SEES IN TWO TONES. THIS IS SUFFICIENT. PHOTOGRAPH WHAT IS REQUESTED, NOTHING MORE. KEEP EACH SUBJECT INSIDE THE BRACKETS.`,
+    memo: 'RECORDER {RECORDER}: WELCOME TO THE OFFICE OF CIVIC RECORD. YOUR UNIT SEES IN TWO TONES. THIS IS SUFFICIENT. PHOTOGRAPH WHAT IS REQUESTED, NOTHING MORE. KEEP EACH SUBJECT INSIDE THE BRACKETS.',
     pick: [['red', 'blue'], ['rect'], ['circle'], ['light'], ['nothing'], ['green', 'yellow']], quota: 4,
   },
   {
@@ -48,6 +51,9 @@ export const DAYS = [
 ];
 
 export const LAST_DAY = DAYS.length;
+
+// A shift's name, memo or issue note as the unit shows it.
+export const shiftLine = (d, field) => fill(d[field] || '');
 
 // Highest tier the Office has issued by a given shift.
 export function issuedBy(day) {

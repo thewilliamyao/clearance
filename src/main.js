@@ -4,6 +4,7 @@ import { Input } from './engine/input.js';
 import { Camera } from './engine/camera.js';
 import { Sfx } from './engine/audio.js';
 import { Game } from './game/game.js';
+import { loadContent } from './game/content.js';
 
 const canvas = document.getElementById('screen');
 const device = document.getElementById('device');
@@ -13,19 +14,6 @@ const input = new Input();
 const camera = new Camera(document.getElementById('cam'));
 const sfx = new Sfx();
 input.attach(device, canvas);
-
-const params = new URLSearchParams(location.search);
-const game = new Game({ screen, input, camera, sfx });
-
-// The first touch or key wakes the sound and asks for the camera.
-input.onFirstGesture = () => {
-  sfx.unlock();
-  if (!camera.image && camera.state === 'off') camera.start(game.save.settings.facing);
-};
-input.listeners.push(() => sfx.unlock());
-
-// ?image=URL uses a still picture as the camera (tests, or a look without a camera).
-if (params.get('image')) camera.useImage(params.get('image')).catch((e) => console.error('image', e));
 
 // Lay the camera out for the window: upright phones get the controls under the screen;
 // sideways phones and desktops get the screen on the left and the controls on the right,
@@ -77,6 +65,31 @@ addEventListener('orientationchange', () => { setTimeout(layout, 200); setTimeou
 if (window.visualViewport) visualViewport.addEventListener('resize', layout);
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(layout);
 
+const params = new URLSearchParams(location.search);
+// William's edits from the controller (content/edits.json) go in before anything is drawn.
+// ?try=N is the controller's TRY IT: its unsaved draft, a fresh Recorder on shift N, in a save
+// of its own (the real game is untouched), never sharing with the index.
+const trial = params.has('try') ? { shift: Number(params.get('try')) || 1 } : null;
+const content = await loadContent({ draft: !!trial });
+const game = new Game({ screen, input, camera, sfx, trial });
+if (trial) {
+  const tag = document.createElement('div');
+  tag.id = 'trytag';
+  tag.textContent = `TRYING THE CONTROLLER'S ${content.from === 'draft' ? 'DRAFT' : 'SAVED EDITS'} · SHIFT ${game.day} · NOT YOUR REAL GAME`;
+  tag.style.cssText = 'position:fixed;left:50%;top:4px;transform:translateX(-50%);z-index:9;padding:3px 8px;font:11px/1.2 Silkscreen,monospace;color:#fff;background:rgba(198,58,44,.88);border-radius:3px;pointer-events:none;white-space:nowrap';
+  document.body.appendChild(tag);
+}
+
+// The first touch or key wakes the sound and asks for the camera.
+input.onFirstGesture = () => {
+  sfx.unlock();
+  if (!camera.image && camera.state === 'off') camera.start(game.save.settings.facing);
+};
+input.listeners.push(() => sfx.unlock());
+
+// ?image=URL uses a still picture as the camera (tests, or a look without a camera).
+if (params.get('image')) camera.useImage(params.get('image')).catch((e) => console.error('image', e));
+
 // The body colour (Settings ▸ BODY) and the megapixels printed under the screen, which
 // follow the sensor the unit has now.
 const themeMeta = document.querySelector('meta[name="theme-color"]');
@@ -117,7 +130,7 @@ requestAnimationFrame(frame);
 
 // Hooks for tests and for driving the unit from hardware (see README).
 window.__clearance = {
-  game, camera, input, screen,
+  game, camera, input, screen, content,
   press(b) { input.press(b); setTimeout(() => input.release(b), 80); },
   tap() { input.tapped = true; },
 };

@@ -9,6 +9,10 @@ import { unpack } from '../src/engine/screen.js';
 import { seal, stamp } from '../src/game/ui.js';
 import { LEARNED_LABEL } from '../src/game/labels.js';
 import { heading, unpackBits, fromB64, dayText, indexNo, indexBase, PRINT_W, PRINT_H } from '../src/game/shared-index.js';
+import { loadContent } from '../src/game/content.js';
+
+// The label words and headings as William edited them in the controller (content/edits.json).
+await loadContent();
 
 const API = indexBase();
 const params = new URLSearchParams(location.search);

@@ -4,15 +4,14 @@ import { THEMES } from '../engine/palette.js';
 import { fitText } from '../engine/font.js';
 import { desk, paper, rule, seal, header, stamp, list, notice, bar, dim, hints, drawText, textWidth, wrapText, LINE_H } from './ui.js';
 import { SENSORS, TONES, LENSES, FILMS } from './tiers.js';
-import { DAYS, LAST_DAY, RECORDER } from './days.js';
-import { REQUESTS, requestText, requestShort, lookFor, LEARNED_LABEL } from './requests.js';
+import { LAST_DAY, shiftLine } from './days.js';
+import { REQUESTS, requestText, requestShort, lookFor, liveNeed, LEARNED_LABEL } from './requests.js';
+import { t } from './text.js';
 import { heading, printColors, dayText, indexNo, PRINT_W, PRINT_H } from './shared-index.js';
 import { SHOP } from './game.js';
 import { MODULES, MODULE_ORDER, RUNTIME_MB } from '../vision/modules.js';
 import { analyzeCV, FOCUS } from '../vision/cv.js';
 
-// Live checks for the plain-code requests: what analyzeCV needs to compute for each.
-const LIVE_NEED = { red: ['color'], blue: ['color'], green: ['color'], yellow: ['color'], rect: ['rects'], circle: ['blobs'], triangle: ['blobs'], sym: ['sym'], light: ['light'], nothing: ['blank'] };
 function halve(rgba, w, h) {
   const sw = w >> 1, sh = h >> 1, out = new Uint8ClampedArray(sw * sh * 4);
   for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++) {
@@ -55,12 +54,12 @@ export class Title {
   enter() { this.t = 0; this.sel = 0; this.items = this.makeItems(); }
   makeItems() {
     const s = this.g.save, items = [];
-    if (s.phase === 'ended') items.push({ id: 'again', label: 'BEGIN AGAIN' });
-    else items.push({ id: 'go', label: s.phase === 'new' ? 'REPORT FOR DUTY' : `RESUME SHIFT ${s.day}` });
-    if (s.phase !== 'new' && s.phase !== 'ended') items.push({ id: 'again', label: 'NEW RECORDER' });
-    items.push({ id: 'lab', label: 'LAB' });
-    if (this.g.index.connected) items.push({ id: 'index', label: 'THE INDEX' }); // once the shared index exists
-    items.push({ id: 'settings', label: 'SETTINGS' });
+    if (s.phase === 'ended') items.push({ id: 'again', label: t('title.again') });
+    else items.push({ id: 'go', label: s.phase === 'new' ? t('title.report') : t('title.resume', { SHIFT: s.day }) });
+    if (s.phase !== 'new' && s.phase !== 'ended') items.push({ id: 'again', label: t('title.newRecorder') });
+    items.push({ id: 'lab', label: t('menu.lab') });
+    if (this.g.index.connected) items.push({ id: 'index', label: t('menu.index') }); // once the shared index exists
+    items.push({ id: 'settings', label: t('menu.settings') });
     return items;
   }
   update(dt) {
@@ -80,7 +79,7 @@ export class Title {
     if (id === 'index') return g.go('index', 'title');
     if (id === 'settings') return g.go('settings');
     if (id === 'again' && g.save.phase !== 'ended' && g.save.phase !== 'new') {
-      return g.go('confirm', { text: 'START OVER AS A NEW RECORDER? YOUR SHIFTS, MERIT AND EVERY EXPOSURE WILL BE DELETED.', yes: 'START OVER', no: 'KEEP', onYes: () => { g.newGame(); g.go('title'); }, onNo: () => g.go('title') });
+      return g.go('confirm', { text: t('title.startOver'), yes: t('title.startOverYes'), no: t('title.startOverNo'), onYes: () => { g.newGame(); g.go('title'); }, onNo: () => g.go('title') });
     }
     if (id === 'again') g.newGame();
     g.resume();
@@ -90,7 +89,7 @@ export class Title {
     if (g.camera.ready) g.renderLive(1, SENSORS[0], TONES[0]); else g.noSignal();
     dim(scr, P);
     seal(scr, W / 2, 26, 17, P.ink, P.paper);
-    const word = 'CLEARANCE', scale = 4, tw = textWidth(word, scale), x0 = (W - tw) / 2;
+    const word = t('title.word'), scale = 4, tw = textWidth(word, scale), x0 = (W - tw) / 2;
     scr.rect(x0 - 6, 48, tw + 12, 36, P.paper);
     drawText(scr, word, x0, 52, P.ink, { scale });
     // The title starts redacted; the bars lift one letter at a time.
@@ -100,15 +99,15 @@ export class Title {
       if (this.t < 0.35 + k * 0.11) scr.rect(cx - 1, 50, w + 2, 32, P.ink);
       cx += w + scale;
     }
-    drawText(scr, 'A FIELD UNIT OF THE OFFICE OF CIVIC RECORD', W / 2, 89, P.paper, { align: 'center', bg: P.ink, pad: 2 });
+    drawText(scr, t('title.subtitle'), W / 2, 89, P.paper, { align: 'center', bg: P.ink, pad: 2 });
     const mw = 150, mh = this.items.length * 12 + 10, mx = (W - mw) / 2, my = 112;
     paper(scr, mx, my, mw, mh, P);
     list(scr, this.items, this.sel, mx + 2, my + 7, mw - 4, P, 12);
     const cam = g.camera.state;
-    const status = cam === 'live' ? '' : cam === 'asking' ? 'WAITING FOR CAMERA PERMISSION' : cam === 'off' ? 'TOUCH ANY BUTTON TO WAKE THE UNIT' : g.camera.error;
+    const status = cam === 'live' ? '' : cam === 'asking' ? t('title.camWaiting') : cam === 'off' ? t('title.camOff') : g.camera.error;
     if (status) drawText(scr, status, W / 2, 200, P.paper, { align: 'center', bg: P.ink });
-    hints(scr, '▴▾ CHOOSE   ● OK', P, 228, P.paper);
-    drawText(scr, 'OCR-7', W - 4, 228, P.mid, { align: 'right' });
+    hints(scr, t('title.hints'), P, 228, P.paper);
+    drawText(scr, t('global.unit'), W - 4, 228, P.mid, { align: 'right' });
   }
 }
 
@@ -124,10 +123,10 @@ export class NoCamera {
     const g = this.g, scr = g.scr, P = g.P;
     desk(scr, P);
     paper(scr, 20, 30, 280, 170, P);
-    header(scr, 28, 36, 264, 'UNIT FAULT: NO PICTURE', P);
-    const lines = wrapText(`${g.camera.error || 'THE CAMERA DID NOT START.'} THE UNIT NEEDS THE CAMERA. ALLOW CAMERA ACCESS FOR THIS PAGE IN THE BROWSER, THEN TRY AGAIN. ON A PHONE THE PAGE MUST BE OPENED WITH AN HTTPS LINK.`, 256);
+    header(scr, 28, 36, 264, t('nocam.title'), P);
+    const lines = wrapText(`${g.camera.error || t('nocam.failed')} ${t('nocam.text')}`, 256);
     lines.forEach((l, k) => drawText(scr, l, 32, 66 + k * LINE_H, P.ink));
-    hints(scr, '● TRY AGAIN   SELECT: TITLE', P, 186);
+    hints(scr, t('nocam.hints'), P, 186);
   }
 }
 
@@ -149,40 +148,41 @@ export class Order {
     }
     if (this.view && i.hit('SELECT')) g.go('field');
   }
-  memoTime() { return this.g.dayDef.memo.length / 70; }
+  memoTime() { return shiftLine(this.g.dayDef, 'memo').length / 70; }
   chars() { return this.view ? 1e9 : Math.floor(this.t * 70); }
   draw() {
     const g = this.g, scr = g.scr, P = g.P, d = g.dayDef, o = g.order;
     desk(scr, P);
     paper(scr, 10, 6, 300, 228, P);
-    header(scr, 16, 10, 288, `WORK ORDER · SHIFT ${d.n} OF ${LAST_DAY} · ${d.code}`, P);
+    const full = shiftLine(d, 'memo'), note = shiftLine(d, 'issueNote');
+    header(scr, 16, 10, 288, t('order.title', { SHIFT: d.n, SHIFTS: LAST_DAY, NAME: shiftLine(d, 'code') }), P);
     let y = 36;
-    const memo = d.memo.slice(0, this.chars());
+    const memo = full.slice(0, this.chars());
     for (const l of wrapText(memo, 284)) { drawText(scr, l, 18, y, P.ink); y += LINE_H; }
-    y = Math.max(y, 36 + wrapText(d.memo, 284).length * LINE_H) + 3;
+    y = Math.max(y, 36 + wrapText(full, 284).length * LINE_H) + 3;
     const show = this.view || this.t > this.memoTime();
-    if (show && d.issueNote) { drawText(scr, '▸ ' + d.issueNote, 18, y, P.paper, { bg: P.ink, pad: 2 }); y += 13; }
+    if (show && note) { drawText(scr, '▸ ' + note, 18, y, P.paper, { bg: P.ink, pad: 2 }); y += 13; }
     if (show) {
       const mods = d.modules.map((id) => {
         const s = g.modules.st[id];
         return MODULES[id].name + (s.state === 'loading' ? ` ${Math.round(s.progress * 100)}%` : s.state === 'error' ? ' FAULT' : '');
       });
-      for (const l of wrapText('MODULES: ' + mods.join(' · '), 284)) { drawText(scr, l, 18, y, P.ink); y += LINE_H; }
+      for (const l of wrapText(t('order.modules', { LIST: mods.join(' · ') }), 284)) { drawText(scr, l, 18, y, P.ink); y += LINE_H; }
       y += 2; rule(scr, 16, 304, y, P); y += 5;
-      drawText(scr, `REQUESTS · FILE ANY ${o.quota} OF ${o.requests.length}`, 18, y, P.ink); y += 12;
+      drawText(scr, t('order.requests', { QUOTA: o.quota, N: o.requests.length }), 18, y, P.ink); y += 12;
       for (const r of o.requests) {
         const def = REQUESTS[r.key];
         drawText(scr, r.done ? '■' : r.withdrawn ? '×' : '□', 20, y, P.ink);
         const tw = drawText(scr, fitText(requestText(r), 200), 30, y, r.withdrawn ? P.mid : P.ink);
         if (r.withdrawn) scr.hline(29, 30 + tw, y + 3, P.mid);
-        drawText(scr, r.done ? `FILED +${r.merit}` : r.withdrawn ? 'WITHDRAWN' : def.merit ? String(def.merit) : '—', 300, y, P.ink, { align: 'right' });
+        drawText(scr, r.done ? t('order.filed', { MERIT: r.merit }) : r.withdrawn ? t('order.withdrawn') : def && def.merit ? String(def.merit) : '—', 300, y, P.ink, { align: 'right' });
         y += 11;
       }
       y += 2; rule(scr, 16, 304, y, P); y += 5;
-      drawText(scr, `FILM: ${o.film} EXPOSURES   MERIT ON HAND: ${g.save.merit}`, 18, y, P.ink);
-      if (blink(g.t, 1.5)) drawText(scr, this.view ? '● BACK TO WORK' : '● ACCEPT ORDER', 18, 222, P.ink);
+      drawText(scr, t('order.film', { FILM: o.film, MERIT: g.save.merit }), 18, y, P.ink);
+      if (blink(g.t, 1.5)) drawText(scr, this.view ? t('order.back') : t('order.accept'), 18, 222, P.ink);
     }
-    if (show && !this.view) stamp(scr, [['ISSUED', 2]], 266, 216, P.stamp, { angle: -0.14, seed: d.n, pad: 3, reveal: Math.min(1, (this.t - this.memoTime()) * 5) });
+    if (show && !this.view) stamp(scr, [[t('order.stamp'), 2]], 266, 216, P.stamp, { angle: -0.14, seed: d.n, pad: 3, reveal: Math.min(1, (this.t - this.memoTime()) * 5) });
   }
 }
 
@@ -202,7 +202,7 @@ export class Viewfinder {
     this.live = null; this.liveT = 0.15;
     if (arg === 'quota' && g.order && !g.order.closed) this.popBubble('quota');
     this.hintT = prev === 'order' && g.day === 1 && !g.order.shots ? 7 : 0; // first shift only
-    if (g.day === LAST_DAY && g.save.selfMisses >= 2) g.toast(g.save.selfMisses >= 4 ? 'TURN THE UNIT AROUND.' : 'HINT: THE RECORDER IS HOLDING THE UNIT.', 4);
+    if (g.day === LAST_DAY && g.save.selfMisses >= 2) g.toast(g.save.selfMisses >= 4 ? t('field.selfHint2') : t('field.selfHint'), 4);
     g.installModules();
     g.wake();
   }
@@ -230,7 +230,7 @@ export class Viewfinder {
     if (i.hit('UP')) { this.fixFocus(-1); this.live = null; this.liveT = 0.05; g.sfx.move(); }
     if (i.hit('DOWN')) { this.fixFocus(1); this.live = null; this.liveT = 0.05; g.sfx.move(); }
     if (i.hit('LEFT') || i.hit('RIGHT')) {
-      if (g.maxZoom <= 1) { g.toast('LENS I HAS NO ZOOM · REQUISITION LENS II'); g.sfx.deny(); }
+      if (g.maxZoom <= 1) { g.toast(t('field.noZoom')); g.sfx.deny(); }
       else {
         const zs = ZOOMS.filter((z) => z <= g.maxZoom);
         const k = Math.max(0, Math.min(zs.length - 1, zs.indexOf(this.zoom) + (i.hit('RIGHT') ? 1 : -1)));
@@ -251,10 +251,11 @@ export class Viewfinder {
     this.liveT -= dt;
     if (this.liveT > 0) return;
     this.liveT = 0.25;
-    if (!r || !LIVE_NEED[r.key] || !g.lastFrame || !g.camera.ready) { this.live = null; return; }
+    const need = r && liveNeed(r.key);
+    if (!need || !g.lastFrame || !g.camera.ready) { this.live = null; return; }
     try {
       const big = g.lastFrame, small = halve(big, W, H);
-      const cv = analyzeCV(small, W / 2, H / 2, { rgba: big, w: W, h: H }, LIVE_NEED[r.key]);
+      const cv = analyzeCV(small, W / 2, H / 2, { rgba: big, w: W, h: H }, need);
       const v = REQUESTS[r.key].judge({ cv }, {});
       this.live = { key: r.key, ok: v.ok, why: v.why, marks: v.marks || [], score: v.score, cv };
     } catch (e) { console.warn('live check', e); this.live = null; }
@@ -280,7 +281,7 @@ export class Viewfinder {
     const g = this.g, o = g.order;
     if (!o) return;
     if (o.film <= 0) { g.sfx.deny(); this.popBubble('film'); return; }
-    if (!g.camera.ready) { g.sfx.deny(); g.toast('NO PICTURE · CHECK THE CAMERA'); return; }
+    if (!g.camera.ready) { g.sfx.deny(); g.toast(t('field.noPicture')); return; }
     const photo = g.capture(this.zoom);
     if (!photo) return;
     g.go('develop', photo);
@@ -291,7 +292,7 @@ export class Viewfinder {
     // Live tracking, only for what the selected request is about.
     const sel = this.selected(), look = sel ? lookFor(sel.key) : { labels: null, faces: true };
     if (look.labels) g.track.objects.filter((ob) => look.labels.includes(ob.label)).slice(0, 8).forEach((ob) => { if (ob.score < 0.4) return; const [x, y, w, h] = box(ob.box); shadowRect(scr, x, y, w, h, P, true); tag(scr, ob.label.toUpperCase(), x, y, P.ink, P.paper); });
-    if (look.faces) g.track.faces.slice(0, 6).forEach((f, k) => { const [x, y, w, h] = box(f.box); shadowBrackets(scr, x, y, w, h, P, 6); tag(scr, `SUBJ ${String(k + 1).padStart(2, '0')}`, x, y, P.paper, P.ink); });
+    if (look.faces) g.track.faces.slice(0, 6).forEach((f, k) => { const [x, y, w, h] = box(f.box); shadowBrackets(scr, x, y, w, h, P, 6); tag(scr, t('verdict.subjectN', { N: String(k + 1).padStart(2, '0') }), x, y, P.paper, P.ink); });
     if (this.live && sel && this.live.key === sel.key) this.drawLiveMarks();
     // Focus brackets.
     const fx = FOCUS.x0 * W, fy = FOCUS.y0 * H, fw = (FOCUS.x1 - FOCUS.x0) * W, fh = (FOCUS.y1 - FOCUS.y0) * H;
@@ -301,16 +302,16 @@ export class Viewfinder {
     if (g.save.settings.hud === 0) this.hud();
     if (this.zoomT > 0 && g.maxZoom > 1) this.zoomBar();
     if (this.bubble) return this.drawBubble();
-    if (this.hintT > 0) notice(scr, 'FRAME THE SUBJECT IN THE BRACKETS AND PRESS THE SHUTTER.\n▴ ▾ PICKS THE REQUEST · SELECT OPENS THE MENU', P, 150);
-    for (const t of g.toasts) notice(scr, t.text, P, 104);
+    if (this.hintT > 0) notice(scr, t('field.firstHint'), P, 150);
+    for (const x of g.toasts) notice(scr, x.text, P, 104);
   }
   hud() {
     const g = this.g, scr = g.scr, P = g.P, o = g.order;
     this.tasks();
     scr.rect(0, H - 11, W, 11, P.ink);
     const film = o ? o.film : 0;
-    drawText(scr, `FILM ${String(film).padStart(2, '0')}`, 4, H - 9, film <= 2 && blink(g.t, 3) ? P.stamp : P.paper);
-    drawText(scr, `MERIT ${g.save.merit}`, 62, H - 9, P.paper);
+    drawText(scr, t('field.film', { N: String(film).padStart(2, '0') }), 4, H - 9, film <= 2 && blink(g.t, 3) ? P.stamp : P.paper);
+    drawText(scr, t('field.merit', { MERIT: g.save.merit }), 62, H - 9, P.paper);
     let x = W - 4;
     const mods = g.enabledModules();
     for (let k = mods.length - 1; k >= 0; k--) {
@@ -340,9 +341,9 @@ export class Viewfinder {
   // Under it, the live reading for the selected one.
   tasks() {
     const g = this.g, scr = g.scr, P = g.P, o = g.order;
-    if (!o) { drawText(scr, 'NO WORK ORDER', 4, 3, P.paper, { bg: P.ink, pad: 2 }); return; }
+    if (!o) { drawText(scr, t('field.noOrder'), 4, 3, P.paper, { bg: P.ink, pad: 2 }); return; }
     const rs = o.requests, filed = g.filed(), met = filed >= o.quota;
-    const head = met ? `QUOTA MET · ${filed} FILED` : `FILE ${o.quota - filed} MORE · ${filed}/${o.quota}`;
+    const head = met ? t('field.quotaMet', { FILED: filed }) : t('field.toFile', { LEFT: o.quota - filed, FILED: filed, QUOTA: o.quota });
     const labels = rs.map((r) => fitText(requestShort(r), 170));
     const w = Math.max(textWidth(head) + 9, ...labels.map((l) => textWidth(l) + 19));
     const x = 2, y = 2, h = 14 + rs.length * 9;
@@ -359,7 +360,7 @@ export class Viewfinder {
     });
     const sel = this.selected(), lv = this.live;
     if (sel && lv && lv.key === sel.key) {
-      const text = fitText(lv.ok ? `✓ ${lv.why.split(' · ')[0]} · SHOOT` : lv.why, W - 8);
+      const text = fitText(lv.ok ? t('field.shoot', { WHAT: lv.why.split(' · ')[0] }) : lv.why, W - 8);
       drawText(scr, text, x + 2, y + h + 3, lv.ok ? P.paper : P.paper, { bg: lv.ok ? P.stamp : P.ink, pad: 2 });
     }
   }
@@ -381,10 +382,10 @@ export class Viewfinder {
   drawBubble() {
     const g = this.g, scr = g.scr, P = g.P, b = this.bubble, o = g.order;
     const quota = b.kind === 'quota';
-    const title = quota ? 'QUOTA MET' : 'OUT OF FILM';
+    const title = quota ? t('field.quotaTitle') : t('field.filmTitle');
     const body = quota
-      ? `${g.filed()} OF ${o.requests.length} REQUESTS FILED. RETURN FOR REVIEW NOW AND COLLECT A +${Math.round(o.earned * 0.2)} DILIGENCE BONUS.`
-      : 'NO EXPOSURES LEFT ON THIS SHIFT. RETURN FOR REVIEW.';
+      ? t('field.quotaBody', { FILED: g.filed(), N: o.requests.length, BONUS: Math.round(o.earned * 0.2) })
+      : t('field.filmBody');
     const lines = wrapText(body, 172);
     const w = 190, h = 31 + lines.length * LINE_H + 19;
     const x = W - w - 5, y = 31, sx = W - 15, sy = 13;
@@ -404,12 +405,12 @@ export class Viewfinder {
       scr.hline(cx - half, cx + half, ty, P.paper);
       scr.pset(cx - half - 1, ty, P.ink); scr.pset(cx + half + 1, ty, P.ink);
     }
-    drawText(scr, 'THE OFFICE', x + 8, y + 5, P.ink);
+    drawText(scr, t('field.from'), x + 8, y + 5, P.ink);
     drawText(scr, title, x + 8, y + 14, P.stamp, { scale: 1 });
     scr.hline(x + 8, x + 8 + textWidth(title), y + 22, P.stamp);
     lines.forEach((l, j) => drawText(scr, l, x + 8, y + 28 + j * LINE_H, P.ink));
     const by = y + h - 15;
-    const labels = quota ? ['END SHIFT', 'KEEP SHOOTING'] : ['END SHIFT'];
+    const labels = quota ? [t('field.endShift'), t('field.keepShooting')] : [t('field.endShift')];
     const bw = quota ? 83 : w - 16;
     labels.forEach((label, j) => {
       const bx = x + 8 + j * (bw + 8);
@@ -420,7 +421,7 @@ export class Viewfinder {
 }
 
 // Shift 5: the unit asks back instead of filing. Its own voice (INTENT), not the Office's.
-function askBubble(scr, P, question, reveal, sel = 0) {
+export function askBubble(scr, P, question, reveal, sel = 0) {
   const lines = wrapText(question, 172);
   const w = 190, h = 31 + lines.length * LINE_H + 25;
   const x = W - w - 5, y = 41, sx = W - 15, sy = 23; // below ● CONTINUE
@@ -433,12 +434,13 @@ function askBubble(scr, P, question, reveal, sel = 0) {
     scr.hline(cx - half, cx + half, ty, P.paper);
     scr.pset(cx - half - 1, ty, P.ink); scr.pset(cx + half + 1, ty, P.ink);
   }
-  drawText(scr, 'INTENT', x + 8, y + 5, P.ink);
-  drawText(scr, 'YOU SURE?', x + 8, y + 14, P.stamp);
-  scr.hline(x + 8, x + 8 + textWidth('YOU SURE?'), y + 22, P.stamp);
+  const title = t('ask.title');
+  drawText(scr, t('ask.from'), x + 8, y + 5, P.ink);
+  drawText(scr, title, x + 8, y + 14, P.stamp);
+  scr.hline(x + 8, x + 8 + textWidth(title), y + 22, P.stamp);
   lines.forEach((l, j) => drawText(scr, l, x + 8, y + 28 + j * LINE_H, P.ink));
   const by = y + h - 15, bw = 83;
-  ['SHOW AGAIN', 'NO'].forEach((label, j) => {
+  [t('ask.showAgain'), t('ask.no')].forEach((label, j) => {
     const bx = x + 8 + j * (bw + 8);
     if (sel === j) scr.rect(bx, by - 3, bw, 13, P.ink); else scr.frame(bx, by - 3, bw, 13, P.ink);
     drawText(scr, label, bx + bw / 2, by, sel === j ? P.paper : P.ink, { align: 'center' });
@@ -498,7 +500,7 @@ export class Develop {
       if (this.t - this.tStamp < 0.3) return; // let the bubble land before it takes presses
       if (i.hit('LEFT') || i.hit('RIGHT') || i.hit('UP') || i.hit('DOWN')) { this.askSel = 1 - this.askSel; g.sfx.move(); }
       if ((i.hit('OK') || i.tapped) && this.askSel === 1) {
-        if (g.refuse(this.photo)) { g.sfx.deny(); g.buzz(40); g.toast('JUDGEMENT WITHDRAWN'); }
+        if (g.refuse(this.photo)) { g.sfx.deny(); g.buzz(40); g.toast(t('ask.withdrawn')); }
         return this.leave();
       }
       if (i.hit('OK') || i.tapped || i.hit('SHUTTER') || i.hit('SELECT')) { g.sfx.blip(); return this.leave(); }
@@ -530,7 +532,7 @@ export class Develop {
       return;
     }
     const A = this.A;
-    if (!A) { if (blink(g.t, 3)) notice(scr, 'ANALYSING EXPOSURE', P, 110); return; }
+    if (!A) { if (blink(g.t, 3)) notice(scr, t('develop.analysing'), P, 110); return; }
     drawFound(scr, P, ph, A);
     drawMarks(scr, P, ph, A, this.marks().slice(0, this.marksShown), g);
     // Readout.
@@ -542,13 +544,13 @@ export class Develop {
     }
     if (this.stamped) {
       const v = ph.verdict, r = Math.min(1, (this.t - this.tStamp) * 6);
-      if (v && v.ok) stamp(scr, v.merit ? [['FILED', 3], [fitText(v.text, 220), 1], [`+${v.merit} MERIT`, 2]] : [['FILED', 3], [v.text, 1]], 160, 62, P.stamp, { seed: ph.id, reveal: r, angle: -0.07 });
+      if (v && v.ok) stamp(scr, v.merit ? [[t('develop.filed'), 3], [fitText(v.text, 220), 1], [t('develop.merit', { MERIT: v.merit }), 2]] : [[t('develop.filed'), 3], [v.text, 1]], 160, 62, P.stamp, { seed: ph.id, reveal: r, angle: -0.07 });
       else if (v && v.soft) askBubble(scr, P, v.why, r, this.askSel);
-      else stamp(scr, [['NOT FILED', 2], [fitText(v && v.why ? v.why : 'NO OPEN REQUEST', 250), 1]], 160, 52, P.stamp, { seed: ph.id, angle: 0.04, reveal: r });
-      if (blink(g.t, 1.5)) drawText(scr, '● CONTINUE', W - 4, 3, P.paper, { align: 'right', bg: P.ink });
+      else stamp(scr, [[t('develop.notFiled'), 2], [fitText(v && v.why ? v.why : t('develop.noRequest'), 250), 1]], 160, 52, P.stamp, { seed: ph.id, angle: 0.04, reveal: r });
+      if (blink(g.t, 1.5)) drawText(scr, t('develop.continue'), W - 4, 3, P.paper, { align: 'right', bg: P.ink });
       // Shift 5 with SHARE WITH THE INDEX on: where its 40x30 copy is.
       const st = v && v.ok ? g.index.statusOf(ph.id) : null;
-      if (st) drawText(scr, st.state === 'shared' ? `SHARED · INDEX ${indexNo(st.entry.id)}` : st.state === 'sending' ? 'SENDING TO THE INDEX' : 'QUEUED FOR THE INDEX', W - 4, 14, P.paper, { align: 'right', bg: P.ink });
+      if (st) drawText(scr, st.state === 'shared' ? t('develop.shared', { NO: indexNo(st.entry.id) }) : st.state === 'sending' ? t('develop.sending') : t('develop.queued'), W - 4, 14, P.paper, { align: 'right', bg: P.ink });
     }
   }
 }
@@ -612,12 +614,12 @@ export class Menu {
   enter(arg, prev) {
     const g = this.g;
     this.items = [
-      { id: 'resume', label: 'RESUME' }, { id: 'order', label: 'WORK ORDER' }, { id: 'archive', label: 'ARCHIVE', value: String(g.store.list.length) },
-      ...(g.index.connected ? [{ id: 'index', label: 'THE INDEX' }] : []),
-      { id: 'lab', label: 'LAB' }, { id: 'settings', label: 'SETTINGS' }, { id: 'end', label: 'END SHIFT', value: `${g.filed()}/${g.order ? g.order.quota : 0}` },
+      { id: 'resume', label: t('menu.resume') }, { id: 'order', label: t('menu.order') }, { id: 'archive', label: t('menu.archive'), value: String(g.store.list.length) },
+      ...(g.index.connected ? [{ id: 'index', label: t('menu.index') }] : []),
+      { id: 'lab', label: t('menu.lab') }, { id: 'settings', label: t('menu.settings') }, { id: 'end', label: t('menu.end'), value: `${g.filed()}/${g.order ? g.order.quota : 0}` },
     ];
-    if (g.day >= 5 && g.day < LAST_DAY) this.items.push({ id: 'expose', label: 'OPEN THE BACK OF THE UNIT' });
-    this.items.push({ id: 'title', label: 'TITLE SCREEN' });
+    if (g.day >= 5 && g.day < LAST_DAY) this.items.push({ id: 'expose', label: t('menu.expose') });
+    this.items.push({ id: 'title', label: t('menu.title') });
     if (prev === 'field' || prev === 'develop' || this.sel >= this.items.length) this.sel = 0;
   }
   update() {
@@ -638,13 +640,13 @@ export class Menu {
     else if (id === 'end') {
       const met = g.quotaMet();
       g.go('confirm', {
-        text: met ? 'END THE SHIFT AND RETURN FOR REVIEW?' : `QUOTA NOT MET (${g.filed()} OF ${g.order.quota}). THE OFFICE WILL ISSUE A CITATION. END THE SHIFT ANYWAY?`,
-        yes: 'END SHIFT', no: 'KEEP WORKING', onYes: () => { g.closeShift(); g.go('report'); }, onNo: () => g.go('field'),
+        text: met ? t('menu.endQuestion') : t('menu.endEarly', { FILED: g.filed(), QUOTA: g.order.quota }),
+        yes: t('menu.endYes'), no: t('menu.endNo'), onYes: () => { g.closeShift(); g.go('report'); }, onNo: () => g.go('field'),
       });
     } else if (id === 'expose') {
       g.go('confirm', {
-        text: `OPEN THE BACK OF THE UNIT? LIGHT WILL DESTROY ALL ${g.store.list.length} EXPOSURES ON FILE. THE OFFICE WILL NOTICE.`,
-        yes: 'OPEN IT', no: 'CLOSE', danger: true, onYes: () => g.go('ending', 'exposed'), onNo: () => g.go('field'),
+        text: t('menu.exposeQuestion', { N: g.store.list.length }),
+        yes: t('menu.exposeYes'), no: t('menu.exposeNo'), danger: true, onYes: () => g.go('ending', 'exposed'), onNo: () => g.go('field'),
       });
     }
   }
@@ -653,7 +655,7 @@ export class Menu {
     scr.restore(); dim(scr, P);
     const w = 200, h = this.items.length * 12 + 26, x = (W - w) / 2, y = (H - h) / 2;
     paper(scr, x, y, w, h, P);
-    drawText(scr, `SHIFT ${g.day} · ${g.dayDef.code}`, x + 8, y + 6, P.ink);
+    drawText(scr, t('menu.header', { SHIFT: g.day, NAME: shiftLine(g.dayDef, 'code') }), x + 8, y + 6, P.ink);
     rule(scr, x + 4, x + w - 4, y + 16, P);
     list(scr, this.items, this.sel, x + 2, y + 22, w - 4, P, 12);
   }
@@ -714,15 +716,15 @@ export class Archive {
   draw() {
     const g = this.g, scr = g.scr, P = g.P, list = g.store.list;
     if (this.view && list[this.sel]) {
-      drawPhoto(g, list[this.sel], `◂ ▸ BROWSE · ${this.sel + 1}/${list.length}`);
+      drawPhoto(g, list[this.sel], t('archive.browse', { I: this.sel + 1, N: list.length }));
       const st = g.index.statusOf(list[this.sel].id);
-      if (st && st.state === 'shared') drawText(scr, `IN THE INDEX ${indexNo(st.entry.id)} · ▾ WITHDRAW`, W - 4, 3, P.paper, { align: 'right', bg: P.ink });
-      for (const t of g.toasts) notice(scr, t.text, P, 104);
+      if (st && st.state === 'shared') drawText(scr, t('archive.inIndex', { NO: indexNo(st.entry.id) }), W - 4, 3, P.paper, { align: 'right', bg: P.ink });
+      for (const x of g.toasts) notice(scr, x.text, P, 104);
       return;
     }
     desk(scr, P);
-    drawText(scr, `ARCHIVE · ${list.length} EXPOSURE${list.length === 1 ? '' : 'S'} ON FILE`, 8, 4, P.paper);
-    if (!list.length) { notice(scr, 'NO EXPOSURES ON FILE.', P, 100, true); }
+    drawText(scr, t('archive.title', { N: list.length, S: list.length === 1 ? '' : 'S' }), 8, 4, P.paper);
+    if (!list.length) { notice(scr, t('archive.empty'), P, 100, true); }
     const cols = 4, tw = 72, th = 54, gap = 6, x0 = (W - (cols * tw + (cols - 1) * gap)) / 2, y0 = 16;
     const rowOf = (k) => Math.floor(k / cols);
     const first = Math.max(0, rowOf(this.sel) - 2) * cols;
@@ -733,9 +735,9 @@ export class Archive {
       if (k === this.sel) { scr.frame(x - 2, y - 2, tw + 4, th + 4, P.paper); scr.frame(x - 3, y - 3, tw + 6, th + 6, P.paper); }
       drawText(scr, pad3(p.id), x, y + th + 3, P.paper);
       const v = p.verdict;
-      if (v) drawText(scr, v.ok ? 'FILED' : '—', x + tw, y + th + 3, v.ok ? P.stamp : P.mid, { align: 'right' });
+      if (v) drawText(scr, v.ok ? t('archive.filed') : '—', x + tw, y + th + 3, v.ok ? P.stamp : P.mid, { align: 'right' });
     }
-    hints(scr, '◂ ▸ ▴ ▾ CHOOSE · ● OPEN · SELECT BACK', P, H - 10, P.paper);
+    hints(scr, t('archive.hints'), P, H - 10, P.paper);
   }
 }
 
@@ -751,7 +753,7 @@ function drawPhoto(g, p, foot) {
   scr.rect(0, H - h, W, h, P.ink);
   lines.forEach((l, k) => drawText(scr, fitText(l, W - 8), 4, H - h + 3 + k * LINE_H, P.paper));
   const v = p.verdict;
-  if (v && v.ok) stamp(scr, [['FILED', 2], [fitText(v.text, 200), 1]], 250, 40, P.stamp, { seed: p.id, angle: 0.1 });
+  if (v && v.ok) stamp(scr, [[t('develop.filed'), 2], [fitText(v.text, 200), 1]], 250, 40, P.stamp, { seed: p.id, angle: 0.1 });
   drawText(scr, foot, 4, 3, P.paper, { bg: P.ink });
 }
 
@@ -770,27 +772,27 @@ export class Report {
     const g = this.g, scr = g.scr, P = g.P, o = this.o, d = g.dayDef;
     desk(scr, P);
     paper(scr, 10, 6, 300, 228, P);
-    header(scr, 16, 10, 288, `SHIFT REPORT · SHIFT ${d.n} · ${d.code}`, P, `RECORDER ${RECORDER}`);
+    header(scr, 16, 10, 288, t('report.title', { SHIFT: d.n, NAME: shiftLine(d, 'code') }), P, t('global.recorderLine'));
     let y = 38;
     for (const r of o.requests) {
       drawText(scr, r.done ? '✓' : '×', 20, y, r.done ? P.ink : P.mid);
       drawText(scr, fitText(requestText(r), 200), 30, y, r.done ? P.ink : P.mid);
-      drawText(scr, r.done ? `+${r.merit}` : r.withdrawn ? 'WITHDRAWN' : '—', 300, y, P.ink, { align: 'right' });
+      drawText(scr, r.done ? `+${r.merit}` : r.withdrawn ? t('order.withdrawn') : '—', 300, y, P.ink, { align: 'right' });
       y += 11;
     }
     y += 2; rule(scr, 16, 304, y, P); y += 6;
     const met = g.filed() >= o.quota;
     const rows = [
-      [`FILED ${g.filed()} OF ${o.requests.length} · QUOTA ${o.quota}`, met ? 'MET' : 'NOT MET'],
-      ['EXPOSURES USED', `${o.shots}`],
-      ...(g.withdrawn() ? [['JUDGEMENTS WITHDRAWN', `${g.withdrawn()}`]] : []),
-      ['MERIT FOR REQUESTS', `${o.earned}`],
-      met ? ['DILIGENCE BONUS (20%)', `+${o.bonus}`] : ['CITATION', `−${o.citation}`],
-      ['MERIT ON HAND', `${g.save.merit}`],
+      [t('report.filed', { FILED: g.filed(), N: o.requests.length, QUOTA: o.quota }), met ? t('report.met') : t('report.notMet')],
+      [t('report.used'), `${o.shots}`],
+      ...(g.withdrawn() ? [[t('report.withdrawn'), `${g.withdrawn()}`]] : []),
+      [t('report.meritFor'), `${o.earned}`],
+      met ? [t('report.bonus'), `+${o.bonus}`] : [t('report.citation'), `−${o.citation}`],
+      [t('report.onHand'), `${g.save.merit}`],
     ];
     for (const [a, b] of rows) { drawText(scr, a, 20, y, P.ink); drawText(scr, b, 300, y, P.ink, { align: 'right' }); y += 11; }
-    if (this.stamped) stamp(scr, met ? [['APPROVED', 2]] : [['CITATION', 2], ['QUOTA NOT MET', 1]], 236, g.withdrawn() ? 206 : 196, P.stamp, { seed: 40 + d.n, angle: -0.16, reveal: Math.min(1, (this.t - 0.9) * 6) });
-    if (this.t > 0.9 && blink(g.t, 1.5)) drawText(scr, '● REQUISITIONS', 20, 222, P.ink);
+    if (this.stamped) stamp(scr, met ? [[t('report.approved'), 2]] : [[t('report.cited'), 2], [t('report.citedWhy'), 1]], 236, g.withdrawn() ? 206 : 196, P.stamp, { seed: 40 + d.n, angle: -0.16, reveal: Math.min(1, (this.t - 0.9) * 6) });
+    if (this.t > 0.9 && blink(g.t, 1.5)) drawText(scr, t('report.next'), 20, 222, P.ink);
   }
 }
 
@@ -813,19 +815,19 @@ export class Shop {
     }
     const res = g.buy(r.track);
     if (res === 'ok' || res === 'issued') { g.sfx.stamp(); g.buzz(30); this.flash = 0.9; this.flashRow = this.sel; }
-    else if (res === 'poor') { g.sfx.deny(); g.toast('INSUFFICIENT MERIT'); }
-    else { g.sfx.deny(); g.toast('ALREADY AT THE HIGHEST GRADE'); }
+    else if (res === 'poor') { g.sfx.deny(); g.toast(t('shop.poor')); }
+    else { g.sfx.deny(); g.toast(t('shop.maxed')); }
   }
   draw() {
     const g = this.g, scr = g.scr, P = g.P, rows = this.rows();
     desk(scr, P);
     paper(scr, 6, 6, 308, 228, P);
-    header(scr, 12, 10, 296, 'REQUISITION FORM 12-B', P, `MERIT ${g.save.merit}`);
+    header(scr, 12, 10, 296, t('shop.title'), P, t('shop.merit', { MERIT: g.save.merit }));
     let y = 38;
     rows.forEach((r, k) => {
       const on = k === this.sel;
       if (r.begin) {
-        const label = g.day >= LAST_DAY ? 'RETURN TO TITLE' : `BEGIN SHIFT ${g.day + 1} ▸`;
+        const label = g.day >= LAST_DAY ? t('shop.done') : t('shop.begin', { NEXT: g.day + 1 });
         y += 4;
         if (on) scr.rect(12, y - 3, 164, 13, P.ink);
         drawText(scr, label, 18, y, on ? P.paper : P.ink);
@@ -835,41 +837,35 @@ export class Shop {
       if (on) scr.rect(12, y - 3, 164, 23, P.ink);
       const fg = on ? P.paper : P.ink;
       if (next >= tiers.length) {
-        drawText(scr, tiers[cur].name, 18, y, fg); drawText(scr, 'MAX', 172, y, fg, { align: 'right' });
+        drawText(scr, tiers[cur].name, 18, y, fg); drawText(scr, t('shop.max'), 172, y, fg, { align: 'right' });
         drawText(scr, tiers[cur].spec || '', 18, y + 10, on ? P.paper : P.mid);
       } else {
         drawText(scr, tiers[next].name, 18, y, fg);
         drawText(scr, String(r.costs[next]), 172, y, fg, { align: 'right' });
-        drawText(scr, fitText(`${tiers[next].spec} (NOW ${tiers[cur].spec || 'OFF'})`, 152), 18, y + 10, on ? P.paper : P.mid);
+        drawText(scr, fitText(t('shop.now', { SPEC: tiers[next].spec, CURRENT: tiers[cur].spec || t('shop.off') }), 152), 18, y + 10, on ? P.paper : P.mid);
       }
-      if (this.flash > 0 && this.flashRow === k) stamp(scr, [['APPROVED', 1]], 140, y + 6, P.stamp, { seed: k + 3, angle: -0.2 });
+      if (this.flash > 0 && this.flashRow === k) stamp(scr, [[t('shop.approved'), 1]], 140, y + 6, P.stamp, { seed: k + 3, angle: -0.2 });
       y += 26;
     });
     // Live preview of the highlighted grade.
     const r = rows[this.sel];
-    let s = g.sensor, tn = g.tone, cap = 'PREVIEW: CURRENT';
+    let s = g.sensor, tn = g.tone, cap = t('shop.preview', { WHAT: t('shop.current') });
     if (r && !r.begin) {
       const next = Math.min(g.tier(r.track) + 1, g.trackDef(r.track).length - 1);
-      if (r.track === 'sensor') { s = SENSORS[next]; cap = `PREVIEW: ${SENSORS[next].name}`; }
-      if (r.track === 'tone') { tn = TONES[next]; cap = `PREVIEW: ${TONES[next].name}`; }
+      if (r.track === 'sensor') { s = SENSORS[next]; cap = t('shop.preview', { WHAT: SENSORS[next].name }); }
+      if (r.track === 'tone') { tn = TONES[next]; cap = t('shop.preview', { WHAT: TONES[next].name }); }
     }
     scr.rect(183, 37, 124, 94, P.ink);
     if (g.camera.ready) g.renderLive(1, s, tn, [185, 39, 120, 90]); else g.noSignal([185, 39, 120, 90]);
     drawText(scr, cap, 245, 136, P.ink, { align: 'center' });
     const lines = wrapText(shopNote(r), 120);
     lines.forEach((l, k) => drawText(scr, l, 185, 150 + k * LINE_H, P.mid));
-    for (const t of g.toasts) notice(scr, t.text, P, 104);
+    for (const x of g.toasts) notice(scr, x.text, P, 104);
   }
 }
 function shopNote(r) {
-  if (!r || r.begin) return 'UNSPENT MERIT CARRIES OVER.';
-  return {
-    sensor: 'MORE PIXELS. SHARPER EVIDENCE PAYS MORE MERIT.',
-    tone: 'MORE TONES, THEN COLOUR.',
-    lens: 'DIGITAL ZOOM WITH ◂ ▸. SUBJECTS NEED NOT KNOW.',
-    film: 'MORE EXPOSURES PER SHIFT.',
-    tracking: 'LIVE BOXES ON EVERY OBJECT THE INVENTORY KNOWS.',
-  }[r.track];
+  if (!r || r.begin) return t('shop.beginNote');
+  return t(`shop.${r.track}Note`);
 }
 
 // =========================================================================== SETTINGS
@@ -885,19 +881,20 @@ export class Settings {
     const models = ['objects', 'faces', 'affect', 'intent'];
     const nReady = models.filter((id) => st(id) === 'ready').length;
     const loading = models.filter((id) => st(id) === 'loading');
+    const onOff = (v) => (v ? t('settings.on') : t('settings.off'));
     return [
-      { id: 'theme', label: 'PALETTE', value: `◂ ${(THEMES.find((x) => x.id === s.theme) || THEMES[0]).name} ▸` },
-      { id: 'body', label: 'BODY', value: `◂ ${s.body === 'graphite' ? 'GRAPHITE' : 'SILVER'} ▸` },
-      { id: 'sound', label: 'SOUND', value: s.sound ? 'ON' : 'OFF' },
-      { id: 'haptics', label: 'VIBRATION', value: s.haptics ? 'ON' : 'OFF' },
-      { id: 'facing', label: 'CAMERA', value: s.facing === 'user' ? 'FRONT' : 'BACK' },
-      { id: 'tap', label: 'TAP SCREEN TO SHOOT', value: s.tapShoot ? 'ON' : 'OFF' },
-      ...(g.index.connected ? [{ id: 'share', label: 'SHARE WITH THE INDEX', value: s.share ? 'ON' : 'OFF' }] : []),
+      { id: 'theme', label: t('settings.palette'), value: `◂ ${(THEMES.find((x) => x.id === s.theme) || THEMES[0]).name} ▸` },
+      { id: 'body', label: t('settings.body'), value: `◂ ${s.body === 'graphite' ? t('settings.graphite') : t('settings.silver')} ▸` },
+      { id: 'sound', label: t('settings.sound'), value: onOff(s.sound) },
+      { id: 'haptics', label: t('settings.vibration'), value: onOff(s.haptics) },
+      { id: 'facing', label: t('settings.camera'), value: s.facing === 'user' ? t('settings.front') : t('settings.rear') },
+      { id: 'tap', label: t('settings.tap'), value: onOff(s.tapShoot) },
+      ...(g.index.connected ? [{ id: 'share', label: t('settings.share'), value: onOff(s.share) }] : []),
       { id: 'jump', label: 'DEV: JUMP TO SHIFT', value: `◂ ${this.jump} ▸`, dim: true },
       { id: 'unlock', label: 'DEV: UNLOCK EVERYTHING', value: g.save.dev.unlockAll ? 'ON' : 'OFF', dim: true },
       { id: 'models', label: 'DEV: DOWNLOAD ALL MODELS', value: loading.length ? `${MODULES[loading[0]].name} ${Math.round(g.modules.st[loading[0]].progress * 100)}%` : `${nReady}/4 READY`, dim: true },
-      { id: 'erase', label: 'ERASE EVERYTHING', dim: true },
-      { id: 'back', label: 'BACK' },
+      { id: 'erase', label: t('settings.erase'), dim: true },
+      { id: 'back', label: t('settings.back') },
     ];
   }
   update() {
@@ -915,10 +912,10 @@ export class Settings {
     else if (id === 'facing') { s.facing = s.facing === 'user' ? 'environment' : 'user'; g.camera.start(s.facing); }
     else if (id === 'tap') s.tapShoot = !s.tapShoot;
     else if (id === 'share') {
-      if (s.share) { s.share = false; g.index.stop(); g.toast('SHARING OFF'); }
+      if (s.share) { s.share = false; g.index.stop(); g.toast(t('settings.sharingOff')); }
       else return g.go('confirm', {
-        text: 'SHARE YOUR SHIFT 5 FILINGS WITH THE INDEX? EACH ONE GOES AS A 40×30 TWO-TONE PRINT WITH ITS LABEL, AND ANYONE CAN SEE IT. SHARE ONLY PEOPLE WHO AGREED TO BE PHOTOGRAPHED.',
-        yes: 'SHARE', no: 'NOT NOW', onYes: () => { s.share = true; g.persist(); g.go('settings', this.from); }, onNo: () => g.go('settings', this.from),
+        text: t('settings.shareQuestion'),
+        yes: t('settings.shareYes'), no: t('settings.shareNo'), onYes: () => { s.share = true; g.persist(); g.go('settings', this.from); }, onNo: () => g.go('settings', this.from),
       });
     }
     else if (id === 'jump') {
@@ -926,7 +923,7 @@ export class Settings {
       else { g.jumpTo(this.jump); g.toast(`NOW ON SHIFT ${this.jump}`); return g.go('order'); }
     } else if (id === 'unlock') g.save.dev.unlockAll = !g.save.dev.unlockAll;
     else if (id === 'models') ['objects', 'faces', 'affect', 'intent'].forEach((m) => g.modules.ensure(m));
-    else if (id === 'erase') return g.go('confirm', { text: 'ERASE EVERYTHING: SHIFTS, MERIT, SETTINGS AND EVERY EXPOSURE?', yes: 'ERASE', no: 'KEEP', danger: true, onYes: () => { g.newGame(); g.go('title'); }, onNo: () => g.go('settings', this.from) });
+    else if (id === 'erase') return g.go('confirm', { text: t('settings.eraseQuestion'), yes: t('settings.eraseYes'), no: t('settings.eraseNo'), danger: true, onYes: () => { g.newGame(); g.go('title'); }, onNo: () => g.go('settings', this.from) });
     else if (id === 'back') return g.go(this.from);
     g.persist();
   }
@@ -934,11 +931,11 @@ export class Settings {
     const g = this.g, scr = g.scr, P = g.P, items = this.items();
     desk(scr, P);
     paper(scr, 20, 8, 280, 224, P);
-    header(scr, 26, 12, 268, 'UNIT SETTINGS', P);
+    header(scr, 26, 12, 268, t('settings.title'), P);
     list(scr, items, this.sel, 24, 42, 272, P, 13);
-    if (items[this.sel].id === 'share') hints(scr, 'SHARE ONLY PEOPLE WHO AGREED TO BE PHOTOGRAPHED.', P, 203, P.stamp);
-    hints(scr, '◂ ▸ CHANGE · ● OK · SELECT BACK', P, 218);
-    for (const t of g.toasts) notice(scr, t.text, P, 104);
+    if (items[this.sel].id === 'share') hints(scr, t('settings.shareHint'), P, 203, P.stamp);
+    hints(scr, t('settings.hints'), P, 218);
+    for (const x of g.toasts) notice(scr, x.text, P, 104);
   }
 }
 
@@ -1008,36 +1005,36 @@ export class IndexScreen {
     const g = this.g, scr = g.scr, P = g.P, ls = this.labels(), l = ls[this.row];
     if (this.level === 2 && l && l.entries[this.cur]) this.drawPrint(l, l.entries[this.cur]);
     else { desk(scr, P); if (this.level === 1 && l) this.drawSheet(l); else this.drawLabels(ls); }
-    for (const t of g.toasts) notice(scr, t.text, P, 104);
+    for (const x of g.toasts) notice(scr, x.text, P, 104);
   }
   drawLabels(ls) {
     const g = this.g, scr = g.scr, P = g.P, ix = g.index;
-    drawText(scr, 'THE INDEX', 6, 4, P.paper);
-    if (ix.data) drawText(scr, `${ix.data.total} PRINT${ix.data.total === 1 ? '' : 'S'} ON FILE`, W - 6, 4, P.mid, { align: 'right' });
+    drawText(scr, t('index.title'), 6, 4, P.paper);
+    if (ix.data) drawText(scr, t('index.total', { N: ix.data.total, S: ix.data.total === 1 ? '' : 'S' }), W - 6, 4, P.mid, { align: 'right' });
     if (!ls.length) {
-      const msg = !ix.connected ? 'THE INDEX IS NOT CONNECTED.' : ix.loading ? (blink(g.t, 2) ? 'CONTACTING THE INDEX…' : '') : 'THE INDEX DID NOT ANSWER.\n● TRY AGAIN';
+      const msg = !ix.connected ? t('index.notConnected') : ix.loading ? (blink(g.t, 2) ? t('index.contacting') : '') : t('index.noAnswer');
       if (msg) notice(scr, msg, P, 100, true);
-      drawText(scr, 'SELECT BACK', 6, H - 10, P.paper);
+      drawText(scr, t('index.back'), 6, H - 10, P.paper);
       return;
     }
     for (let k = this.top; k < Math.min(ls.length, this.top + IX.rows); k++) {
       const lb = ls[k], y = IX.y0 + (k - this.top) * IX.rowH, on = k === this.row;
       if (on) scr.rect(2, y - 2, W - 4, IX.rowH - 1, P.paper);
       drawText(scr, LEARNED_LABEL[lb.label], 8, y + 6, on ? P.ink : P.paper);
-      drawText(scr, lb.n ? `${lb.n} FILED` : 'NONE ON FILE', 8, y + 17, P.mid);
+      drawText(scr, lb.n ? t('index.filedN', { N: lb.n }) : t('index.none'), 8, y + 17, P.mid);
       for (let j = 0; j < IX.strip; j++) {
         const x = IX.px0 + j * IX.pitch, e = lb.entries[j];
         if (e) { scr.blitTo(this.colors(e), PRINT_W, PRINT_H, x, y, PRINT_W, PRINT_H); scr.frame(x - 1, y - 1, PRINT_W + 2, PRINT_H + 2, on ? P.ink : P.mid); }
         else scr.dots(x, y, PRINT_W, PRINT_H, on ? P.mid : P.dark);
       }
     }
-    drawText(scr, '▴▾ CHOOSE · ● OPEN · SELECT BACK', 6, H - 10, P.paper);
-    drawText(scr, `${this.row + 1}/${ls.length} · ${g.save.settings.share ? 'SHARING ON' : 'SHARING OFF'}`, W - 6, H - 10, P.mid, { align: 'right' });
+    drawText(scr, t('index.hints'), 6, H - 10, P.paper);
+    drawText(scr, `${this.row + 1}/${ls.length} · ${g.save.settings.share ? t('index.sharingOn') : t('index.sharingOff')}`, W - 6, H - 10, P.mid, { align: 'right' });
   }
   drawSheet(l) {
     const g = this.g, scr = g.scr, P = g.P;
     drawText(scr, fitText(heading(l.label), 236), 6, 4, P.paper);
-    drawText(scr, `${l.n} FILED`, W - 6, 4, P.mid, { align: 'right' });
+    drawText(scr, t('index.filedN', { N: l.n }), W - 6, 4, P.mid, { align: 'right' });
     const first = this.scroll * IX.cols;
     for (let k = first; k < Math.min(l.entries.length, first + IX.cols * IX.sheetRows); k++) {
       const c = k - first, e = l.entries[k];
@@ -1047,27 +1044,27 @@ export class IndexScreen {
       else scr.frame(x - 1, y - 1, PRINT_W + 2, PRINT_H + 2, P.mid);
       if (g.index.mine(e.id)) scr.rect(x + PRINT_W - 5, y + 2, 3, 3, P.stamp); // this unit sent it
     }
-    drawText(scr, '◂ ▸ ▴ ▾ CHOOSE · ● VIEW · SELECT BACK', 6, H - 10, P.paper);
-    drawText(scr, l.fetching ? 'LOADING…' : `${this.cur + 1}/${l.n}`, W - 6, H - 10, P.mid, { align: 'right' });
+    drawText(scr, t('index.sheetHints'), 6, H - 10, P.paper);
+    drawText(scr, l.fetching ? t('index.loading') : `${this.cur + 1}/${l.n}`, W - 6, H - 10, P.mid, { align: 'right' });
   }
   drawPrint(l, e) {
     const g = this.g, scr = g.scr, P = g.P, word = LEARNED_LABEL[l.label];
     scr.blit(this.colors(e), PRINT_W, PRINT_H, 0, 0, W / PRINT_W);
-    stamp(scr, [['FILED AS', 1], [word, 2]], Math.min(236, W - textWidth(word, 2) / 2 - 16), 46, P.stamp, { seed: e.id, angle: -0.08 });
-    drawText(scr, `INDEX ${indexNo(e.id)} · ${dayText(e.day)}`, 4, 3, P.paper, { bg: P.ink });
-    drawText(scr, `◂ ▸ BROWSE · ${this.cur + 1}/${l.n} · SELECT BACK`, 4, H - 10, P.paper, { bg: P.ink });
-    if (g.index.mine(e.id)) drawText(scr, 'YOURS · ▾ WITHDRAW', W - 4, H - 10, P.paper, { align: 'right', bg: P.stamp });
+    stamp(scr, [[t('index.filedAs'), 1], [word, 2]], Math.min(236, W - textWidth(word, 2) / 2 - 16), 46, P.stamp, { seed: e.id, angle: -0.08 });
+    drawText(scr, t('index.printNo', { NO: indexNo(e.id), DATE: dayText(e.day) }), 4, 3, P.paper, { bg: P.ink });
+    drawText(scr, t('index.browse', { I: this.cur + 1, N: l.n }), 4, H - 10, P.paper, { bg: P.ink });
+    if (g.index.mine(e.id)) drawText(scr, t('index.yours'), W - 4, H - 10, P.paper, { align: 'right', bg: P.stamp });
   }
 }
 
 // Take one of this unit's prints back out of the index (from the archive or the INDEX screen).
 function withdrawConfirm(g, entry, back) {
   g.go('confirm', {
-    text: `WITHDRAW PRINT ${indexNo(entry.id)} FROM THE INDEX? IT IS DELETED FOR EVERYONE.`,
-    yes: 'WITHDRAW', no: 'KEEP', danger: true,
+    text: t('index.withdrawQuestion', { NO: indexNo(entry.id) }),
+    yes: t('index.withdrawYes'), no: t('index.withdrawNo'), danger: true,
     onYes: () => {
       g.go(back, 'back');
-      g.index.withdraw(entry).then((ok) => g.toast(ok ? 'WITHDRAWN FROM THE INDEX' : 'THE INDEX REFUSED · TRY AGAIN'), () => g.toast('THE INDEX DID NOT ANSWER · TRY AGAIN'));
+      g.index.withdraw(entry).then((ok) => g.toast(ok ? t('index.withdrawn') : t('index.refused')), () => g.toast(t('index.noAnswerToast')));
     },
     onNo: () => g.go(back, 'back'),
   });
@@ -1250,19 +1247,14 @@ export class Ending {
     if (this.kind === 'filed') {
       if (this.step === 0) return this.contactSheet();
       if (this.step === 1 || this.step === 2) {
-        this.doc('NOTICE OF COMPLETION', [
-          `THE FILE ON RECORDER ${RECORDER} IS COMPLETE.`, '',
-          `EXPOSURES ON FILE: ${this.count}`, `EXPOSURES WITH SUBJECTS: ${this.subjects}`, `REQUESTS FILED: ${this.filedN}`, '',
-          'EVERY EXPOSURE DESCRIBES THE ONE WHO TOOK IT: WHERE YOU WENT, WHAT YOU NOTICED, WHOM YOU CHOSE TO RECORD.',
-          'THE OFFICE THANKS YOU FOR YOUR SERVICE. YOUR CLEARANCE IS REVOKED.',
-        ]);
-        if (this.step === 2) stamp(scr, [['FILED', 3], [`RECORDER ${RECORDER}`, 1]], 230, 186, P.stamp, { seed: 99, angle: -0.18 });
+        this.doc(t('ending.filedTitle'), t('ending.filedText', { COUNT: this.count, SUBJECTS: this.subjects, FILED: this.filedN }).split('\n'));
+        if (this.step === 2) stamp(scr, [[t('ending.filedStamp'), 3], [t('global.recorderLine'), 1]], 230, 186, P.stamp, { seed: 99, angle: -0.18 });
         return;
       }
       // Clearance revoked: the picture falls back to the first, crudest grade.
       if (g.camera.ready) g.renderLive(1, SENSORS[0], TONES[0]); else g.noSignal();
-      notice(scr, 'CLEARANCE REVOKED', P, 104);
-      if (this.t > 1.5) drawText(scr, 'END · ● RETURN', W / 2, 220, P.paper, { align: 'center', bg: P.ink });
+      notice(scr, t('ending.revoked'), P, 104);
+      if (this.t > 1.5) drawText(scr, t('ending.end'), W / 2, 220, P.paper, { align: 'center', bg: P.ink });
       return;
     }
     // Exposed: light floods the film.
@@ -1273,36 +1265,32 @@ export class Ending {
         const d = Math.hypot(x - 230, y - 70) / 300 + ((x * 7 + y * 13) % 17) / 60;
         if (d < k * 1.4) scr.pset(x, y, P.paper);
       }
-      if (this.t > 2.4) drawText(scr, '● CONTINUE', W - 4, H - 10, P.ink, { align: 'right' });
+      if (this.t > 2.4) drawText(scr, t('develop.continue'), W - 4, H - 10, P.ink, { align: 'right' });
       return;
     }
     if (this.step === 1 || this.step === 2) {
-      this.doc('INCIDENT REPORT', [
-        `UNIT OCR-7, ISSUED TO RECORDER ${RECORDER}, WAS RETURNED WITH ITS BACK OPEN.`, '',
-        `EXPOSURES LOST TO LIGHT: ${this.count}`, 'RECORDS RECOVERED: 0', '',
-        `RECORDER ${RECORDER} COULD NOT BE REACHED FOR COMMENT.`,
-      ]);
-      if (this.step === 2) stamp(scr, [['INCOMPLETE', 2]], 220, 186, P.stamp, { seed: 98, angle: -0.14 });
+      this.doc(t('ending.exposedTitle'), t('ending.exposedText', { COUNT: this.count }).split('\n'));
+      if (this.step === 2) stamp(scr, [[t('ending.exposedStamp'), 2]], 220, 186, P.stamp, { seed: 98, angle: -0.14 });
       return;
     }
     scr.clear(P.paper);
-    drawText(scr, 'CLEARANCE', W / 2, 90, P.ink, { scale: 3, align: 'center' });
-    drawText(scr, 'NO FILE', W / 2, 124, P.ink, { align: 'center' });
-    if (this.t > 1.5) drawText(scr, 'END · ● RETURN', W / 2, 220, P.ink, { align: 'center' });
+    drawText(scr, t('title.word'), W / 2, 90, P.ink, { scale: 3, align: 'center' });
+    drawText(scr, t('ending.noFile'), W / 2, 124, P.ink, { align: 'center' });
+    if (this.t > 1.5) drawText(scr, t('ending.end'), W / 2, 220, P.ink, { align: 'center' });
   }
   doc(title, lines) {
     const g = this.g, scr = g.scr, P = g.P;
     desk(scr, P);
     paper(scr, 14, 10, 292, 220, P);
-    header(scr, 20, 14, 280, title, P, `RECORDER ${RECORDER}`);
+    header(scr, 20, 14, 280, title, P, t('global.recorderLine'));
     let y = 44;
     for (const l of lines) { for (const w of wrapText(l, 272)) { drawText(scr, w, 24, y, P.ink); y += LINE_H; } if (!l) y += 3; }
-    if (this.t > 1 && blink(g.t, 1.5)) drawText(scr, '● CONTINUE', 296, 218, P.ink, { align: 'right' });
+    if (this.t > 1 && blink(g.t, 1.5)) drawText(scr, t('develop.continue'), 296, 218, P.ink, { align: 'right' });
   }
   contactSheet() {
     const g = this.g, scr = g.scr, P = g.P, ps = this.photos;
     scr.clear(P.ink);
-    drawText(scr, `FILE ${RECORDER} · ${ps.length} EXPOSURES`, 4, 3, P.paper);
+    drawText(scr, t('ending.sheet', { N: ps.length }), 4, 3, P.paper);
     const n = Math.max(1, ps.length), cols = n > 30 ? 8 : n > 12 ? 6 : 4, tw = Math.floor((W - 8) / cols) - 2, th = Math.floor((tw * 3) / 4);
     const shown = Math.min(ps.length, Math.floor(this.t * 8));
     for (let k = 0; k < shown; k++) {
@@ -1310,6 +1298,6 @@ export class Ending {
       if (y + th > H - 12) break;
       scr.blitTo(p.px, p.w, p.h, x, y, tw, th);
     }
-    if (this.t > 1) drawText(scr, '● CONTINUE', W - 4, H - 10, P.paper, { align: 'right' });
+    if (this.t > 1) drawText(scr, t('develop.continue'), W - 4, H - 10, P.paper, { align: 'right' });
   }
 }

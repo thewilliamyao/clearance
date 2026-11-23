@@ -9,14 +9,15 @@
 // that identifies the unit. The server answers with a key that withdraws the print later; the
 // keys stay on this phone (save.shared), even after starting over.
 import { INDEX_API } from '../config.js';
-import { LEARNED_LABEL } from './labels.js';
+import { LEARNED_LABEL, INDEX_LABELS } from './labels.js';
+import { t, fill } from './text.js';
 
+export { INDEX_LABELS };
 export const PRINT_W = 40, PRINT_H = 30, PRINT_BYTES = (PRINT_W * PRINT_H) / 8;
-export const INDEX_LABELS = Object.keys(LEARNED_LABEL);
 const OUTBOX_MAX = 30;
 
-// The heading over each label, in the index's words.
-export const heading = (key) => (key === 'notbelong' ? 'WHO RECORDERS SAY DOES NOT BELONG' : `WHAT RECORDERS CALL ${LEARNED_LABEL[key] || key.toUpperCase()}`);
+// The heading over each label, in the index's words (text.js: index.heading).
+export const heading = (key) => t(key === 'notbelong' ? 'index.headingNotBelong' : 'index.heading', { LABEL: fill(LEARNED_LABEL[key] || key.toUpperCase()) });
 
 // 0/1 pixels (1 = paper), row by row, high bit first.
 export function packBits(px) {
@@ -70,7 +71,7 @@ export class SharedIndex {
 
   // A shift 5 filing: queue its print (when the Recorder shares) and send it.
   file(photo, label, px) {
-    if (!this.on || !LEARNED_LABEL[label] || !px || px.length !== PRINT_W * PRINT_H) return false;
+    if (!this.on || !INDEX_LABELS.includes(label) || !px || px.length !== PRINT_W * PRINT_H) return false;
     this.outbox.push({ photo, label, bits: toB64(packBits(px)) });
     while (this.outbox.length > OUTBOX_MAX) this.outbox.shift();
     this.g.persist();
@@ -141,7 +142,7 @@ export class SharedIndex {
         const res = await this.fetch(`${this.base}/api/index?per=42`);
         if (!res.ok) throw new Error(`index ${res.status}`);
         const j = await res.json();
-        const labels = j.labels.filter((l) => LEARNED_LABEL[l.label]).map((l) => ({ label: l.label, n: l.n, entries: l.entries.map(decode), more: l.n > l.entries.length }));
+        const labels = j.labels.filter((l) => INDEX_LABELS.includes(l.label)).map((l) => ({ label: l.label, n: l.n, entries: l.entries.map(decode), more: l.n > l.entries.length }));
         this.data = { total: j.total, labels };
         this.loadedAt = Date.now();
       } catch (e) { this.error = (e && e.message) || 'unreachable'; }

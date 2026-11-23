@@ -8,6 +8,11 @@ export const VERSION = '0.1';
 // ?index=http://localhost:8787).
 export const INDEX_API = 'https://clearance-index.clearance-index.workers.dev';
 
+// Where the controller saves when it runs on the public site (editor/ there): this file in the
+// game's public repo, through GitHub's API with William's token. GitHub Pages then rebuilds
+// the game. (Run by serve.py on his computer, the controller saves content/edits.json on disk.)
+export const CONTROLLER_REPO = { owner: 'thewilliamyao', repo: 'clearance', branch: 'main', path: 'content/edits.json' };
+
 const MP = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.1.1';
 const ORT = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist';
 const MPM = 'https://storage.googleapis.com/mediapipe-models';

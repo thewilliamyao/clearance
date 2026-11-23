@@ -5,7 +5,7 @@ import { Developer } from '../engine/develop.js';
 import { SENSORS, TONES, LENSES, FILMS, SENSOR_BONUS } from './tiers.js';
 import { DAYS, LAST_DAY, issuedBy, makeOrder, seeded } from './days.js';
 import { REQUESTS, judgeSelected, requestText, learnedFrom, LEARNED_LABEL } from './requests.js';
-import { loadSave, writeSave, defaultSave, PhotoStore } from './save.js';
+import { loadSave, writeSave, defaultSave, PhotoStore, TRY_SAVE, TRY_DB } from './save.js';
 import { Modules } from '../vision/modules.js';
 import { packEmb } from '../vision/clip.js';
 import { SharedIndex } from './shared-index.js';
@@ -21,12 +21,17 @@ export const SHOP = [
 ];
 
 export class Game {
-  constructor({ screen, input, camera, sfx }) {
+  // trial: { shift } when the controller's TRY IT opened this page (?try=N): a fresh Recorder
+  // on that shift, in a save and photo store of its own, never sharing with the index.
+  constructor({ screen, input, camera, sfx, trial = null }) {
     this.scr = screen; this.input = input; this.camera = camera; this.sfx = sfx;
+    this.trial = trial;
+    this.saveKey = trial ? TRY_SAVE : undefined;
     this.dev = new Developer();
     this.modules = new Modules();
-    this.store = new PhotoStore();
-    this.save = loadSave();
+    this.store = new PhotoStore(trial ? TRY_DB : undefined);
+    this.save = trial ? this.trialSave(trial.shift) : loadSave();
+    this.dropUnknownRequests();
     this.sfx.on = this.save.settings.sound;
     this.index = new SharedIndex(this);
     this.indexPrint = null; // the last capture's 40x30 two-tone bits, while it's being judged
@@ -78,7 +83,31 @@ export class Game {
     if (this.t - this.perf.fpsT >= 1) { this.perf.fps = this.perf.frames / (this.t - this.perf.fpsT); this.perf.frames = 0; this.perf.fpsT = this.t; }
   }
 
-  persist() { writeSave(this.save); }
+  persist() { writeSave(this.save, this.saveKey); }
+
+  // A fresh Recorder on shift n, with the real save's settings (palette, body, sound, camera),
+  // sharing off. Its photos from an earlier try are cleared once the store is open.
+  trialSave(n) {
+    const real = loadSave();
+    this.save = defaultSave();
+    this.save.settings = { ...real.settings, share: false };
+    this.store.ready.then(() => this.store.clear());
+    this.store.mem = [];
+    this.jumpTo(Math.max(1, Math.min(LAST_DAY, n | 0)));
+    return this.save;
+  }
+
+  // A saved work order may hold a request the controller has since removed (a quest William
+  // deleted): it drops out, and an order left empty is drawn again.
+  dropUnknownRequests() {
+    const o = this.save.order;
+    if (!o || !Array.isArray(o.requests)) return;
+    const keep = o.requests.filter((r) => REQUESTS[r.key]);
+    if (keep.length === o.requests.length) return;
+    if (!keep.length) { this.save.order = null; if (this.save.phase !== 'ended') this.save.phase = 'new'; }
+    else { o.requests = keep; o.quota = Math.min(o.quota, keep.length); }
+    this.persist();
+  }
 
   // Continue wherever the save left off (the camera has to be running first).
   async resume() {

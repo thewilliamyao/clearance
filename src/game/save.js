@@ -4,6 +4,10 @@
 // 40x30 two-tone copy (shared-index.js).
 
 const KEY = 'clearance.save.v1';
+// TRY IT in the controller plays a shift in a save and a photo store of its own, so trying a
+// draft never touches the Recorder's game (main.js, ?try=N).
+export const TRY_SAVE = 'clearance.save.try';
+export const TRY_DB = 'clearance-try';
 
 export function defaultSave() {
   return {
@@ -29,9 +33,9 @@ export function defaultSave() {
   };
 }
 
-export function loadSave() {
+export function loadSave(key = KEY) {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = localStorage.getItem(key);
     if (!raw) return defaultSave();
     const s = JSON.parse(raw);
     const d = defaultSave();
@@ -39,18 +43,18 @@ export function loadSave() {
   } catch { return defaultSave(); }
 }
 
-export function writeSave(s) {
-  try { localStorage.setItem(KEY, JSON.stringify(s)); } catch { /* private mode: play without saving */ }
+export function writeSave(s, key = KEY) {
+  try { localStorage.setItem(key, JSON.stringify(s)); } catch { /* private mode: play without saving */ }
 }
 
 // --- photos -------------------------------------------------------------------------------
 export class PhotoStore {
-  constructor() { this.mem = []; this.db = null; this.ready = this.open(); }
+  constructor(name = 'clearance') { this.name = name; this.mem = []; this.db = null; this.ready = this.open(); }
 
   open() {
     return new Promise((resolve) => {
       try {
-        const req = indexedDB.open('clearance', 1);
+        const req = indexedDB.open(this.name, 1);
         req.onupgradeneeded = () => req.result.createObjectStore('photos', { keyPath: 'id' });
         req.onsuccess = () => { this.db = req.result; this.all().then((list) => { this.mem = list; resolve(); }); };
         req.onerror = () => resolve();
