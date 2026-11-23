@@ -123,7 +123,10 @@ function insertAtCaret(el, s) {
 async function boot() {
   drawSeal();
   let content = { v: CONTENT_VERSION }, broken = null;
+  // serve.py only ever answers on this computer: anywhere else, don't ask it.
+  const local = ['localhost', '127.0.0.1', '[::1]', '::1'].includes(location.hostname);
   try {
+    if (!local) throw new Error('not served by serve.py');
     const res = await fetch('api', { cache: 'no-store' });
     if (!res.ok) throw new Error(String(res.status));
     const j = await res.json();
