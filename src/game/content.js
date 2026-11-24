@@ -2,7 +2,7 @@
 // orders. content/edits.json holds only what he changed:
 //
 //   { "v": 1,
-//     "shifts": { "3": { "code", "memo", "issueNote", "quota", "pick": [["person"], ...] } },
+//     "shifts": { "3": { "code", "memo", "issueNote", "show", "quota", "pick": [["person"], ...] } },
 //     "quests": { "red": { "text", "short", "merit", "ask", "label" },          a built-in one
 //                 "q-dog": { "kind": "things", "things": ["dog"], "text": "A DOG", ... } },  his own
 //     "lines": { "order.accept": "● SIGN HERE" } }                                 text.js keys
@@ -11,7 +11,7 @@
 // out is skipped with a warning (console, and the controller shows them), never thrown: a
 // bad edit can't stop the game. ?try=N (the controller's TRY IT) uses the controller's
 // unsaved draft from localStorage instead.
-import { DAYS, LAST_DAY } from './days.js';
+import { DAYS, LAST_DAY, shownBy } from './days.js';
 import { REQUESTS, ASK, LEARNED_LABEL, buildQuest, KINDS, NOT_LIKE, THINGS, COLORS, WORD_RULES } from './requests.js';
 import { TEXT, LINES } from './text.js';
 
@@ -29,7 +29,7 @@ export const DEFAULTS = snapshot();
 function snapshot() {
   return {
     shifts: DAYS.map((d) => ({
-      n: d.n, code: d.code, memo: d.memo, issueNote: d.issueNote || '', quota: d.quota,
+      n: d.n, code: d.code, memo: d.memo, issueNote: d.issueNote || '', show: shownBy(d), quota: d.quota,
       pick: d.pick.map((o) => o.slice()), modules: d.modules.slice(), issue: { ...(d.issue || {}) },
     })),
     quests: Object.fromEntries(Object.entries(REQUESTS).map(([k, r]) => [k, {
@@ -44,7 +44,7 @@ function snapshot() {
 export function resetContent() {
   DEFAULTS.shifts.forEach((s, i) => {
     const d = DAYS[i];
-    d.code = s.code; d.memo = s.memo; d.quota = s.quota; d.pick = s.pick.map((o) => o.slice());
+    d.code = s.code; d.memo = s.memo; d.show = s.show; d.quota = s.quota; d.pick = s.pick.map((o) => o.slice());
     if (s.issueNote) d.issueNote = s.issueNote; else delete d.issueNote;
   });
   for (const k of Object.keys(REQUESTS)) {
@@ -184,16 +184,22 @@ export function applyContent(c) {
     if (s.memo !== undefined) { const v = str(s.memo); if (v !== null) d.memo = v; }
     if (s.issueNote !== undefined) { const v = str(s.issueNote); if (v !== null) { if (v.trim()) d.issueNote = v; else delete d.issueNote; } }
     if (s.pick !== undefined) { const v = checkPick(k, s.pick, warn); if (v) d.pick = v; }
+    if (s.show !== undefined) {
+      const v = int(s.show, 1, d.pick.length);
+      if (v !== null) d.show = v; else warn.push(`shift ${n}: show must be 1 to ${d.pick.length} (the pool's slots)`);
+    }
     if (s.quota !== undefined) {
-      const v = int(s.quota, 1, d.pick.length);
-      if (v !== null) d.quota = v; else warn.push(`shift ${n}: quota must be 1 to ${d.pick.length}`);
+      const v = int(s.quota, 1, shownBy(d));
+      if (v !== null) d.quota = v; else warn.push(`shift ${n}: quota must be 1 to ${shownBy(d)} (the requests shown)`);
     }
   }
-  // The pools as written may name a request the edits removed: check every shift once more.
+  // The pools as written may name a request the edits removed: check every shift once more,
+  // and keep show within the pool and the quota within what's shown.
   DAYS.forEach((d) => {
     const ok = checkPick(d.n, d.pick, []);
     if (ok) d.pick = ok;
-    d.quota = Math.max(1, Math.min(d.quota, d.pick.length));
+    d.show = shownBy(d);
+    d.quota = Math.max(1, Math.min(d.quota, d.show));
   });
 
   // Lines.

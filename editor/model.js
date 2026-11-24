@@ -14,7 +14,7 @@ const clone = (x) => JSON.parse(JSON.stringify(x));
 // Every game text is in capitals (the font draws lower case as capitals anyway).
 export const caps = (s) => cleanText(s).toUpperCase();
 
-const SHIFT_FIELDS = ['code', 'memo', 'issueNote', 'quota', 'pick'];
+const SHIFT_FIELDS = ['code', 'memo', 'issueNote', 'show', 'quota', 'pick'];
 const QUEST_FIELDS = ['kind', 'text', 'short', 'merit', 'ask', 'label', 'things', 'min', 'word', 'n', 'colour', 'need', 'base', 'rule'];
 const BUILTIN_FIELDS = ['text', 'short', 'merit', 'ask', 'label'];
 export const BUILTIN_KEYS = Object.keys(DEFAULTS.quests);
@@ -69,7 +69,8 @@ export class Draft {
     const d = DEFAULTS.shifts[n - 1], e = (this.e.shifts && this.e.shifts[n]) || {};
     const s = { ...clone(d) };
     for (const f of SHIFT_FIELDS) if (e[f] !== undefined) s[f] = clone(e[f]);
-    s.quota = Math.max(1, Math.min(s.quota, s.pick.length || 1));
+    s.show = Math.max(1, Math.min(s.show, s.pick.length || 1));
+    s.quota = Math.max(1, Math.min(s.quota, s.show));
     return s;
   }
   shiftChanged(n, field) {
@@ -111,17 +112,21 @@ export class Draft {
     const s = (shifts[n] = isObj(shifts[n]) ? shifts[n] : {});
     if (typeof value === 'string') value = caps(value);
     s[field] = clone(value);
-    if (field === 'pick') {
-      const quota = s.quota !== undefined ? s.quota : DEFAULTS.shifts[n - 1].quota;
-      if (quota > value.length) s.quota = Math.max(1, value.length);
-    }
+    // Fewer slots than shown, or a quota above what's shown: bring them down with it.
+    const d = DEFAULTS.shifts[n - 1];
+    const show = s.show !== undefined ? s.show : d.show;
+    const slots = (s.pick || d.pick).length;
+    if ((field === 'pick' || field === 'show') && show > slots) s.show = Math.max(1, slots);
+    const shown = Math.min(s.show !== undefined ? s.show : d.show, slots);
+    const quota = s.quota !== undefined ? s.quota : d.quota;
+    if (quota > shown) s.quota = Math.max(1, shown);
     this.prune();
   }
   resetShift(n, field) {
     const s = this.e.shifts && this.e.shifts[n];
     if (!s) return;
     if (field) delete s[field]; else delete this.e.shifts[n];
-    if (field === 'pick') delete s.quota; // the written quota goes with the written pool
+    if (field === 'pick') { delete s.quota; delete s.show; } // the written ones go with the written pool
     this.prune();
   }
 
@@ -198,7 +203,7 @@ export class Draft {
 }
 
 export const FIELD_NAMES = {
-  code: 'name', memo: 'memo', issueNote: 'issue note', quota: 'quota', pick: 'work order pool',
+  code: 'name', memo: 'memo', issueNote: 'issue note', show: 'requests shown', quota: 'quota', pick: 'work order pool',
   text: 'wording', short: 'short wording', merit: 'merit', ask: 'question', label: 'label',
 };
 export function groupName(key) { const g = GROUPS.find((x) => x.id === key.split('.')[0]); return g ? g.name : key; }

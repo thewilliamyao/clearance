@@ -10,7 +10,7 @@ import * as gh from './github.js';
 import { SCREENS, lineCanvas, missingGlyphs, P, Raster, css } from './preview.js';
 import { DEFAULTS, applyContent, checkQuest, TRY_KEY, CONTENT_VERSION } from '../src/game/content.js';
 import { GROUPS, LINES, TEXT, placeholders, fill, t } from '../src/game/text.js';
-import { DAYS, LAST_DAY, shiftLine } from '../src/game/days.js';
+import { DAYS, LAST_DAY, shiftLine, shownBy } from '../src/game/days.js';
 import { REQUESTS, KINDS, THINGS, COLORS, WORD_RULES, NOT_LIKE } from '../src/game/requests.js';
 import { MODULES, MODULE_ORDER } from '../src/vision/modules.js';
 import { SENSORS, TONES, LENSES, FILMS } from '../src/game/tiers.js';
@@ -585,7 +585,7 @@ function orderRoom(n) {
   const L = wrapText(shiftLine(d, 'memo'), 284).length;
   const note = shiftLine(d, 'issueNote') ? 13 : 0;
   const M = wrapText(t('order.modules', { LIST: d.modules.map((id) => MODULES[id].name).join(' · ') }), 284).length;
-  const R = d.pick.length;
+  const R = shownBy(d);
   const filmY = 65 + 9 * L + 9 * M + 11 * R + note;
   return { L, R, filmY, spare: 213 - filmY };
 }
@@ -704,15 +704,16 @@ function poolEditor(n) {
         set(p.filter((o) => o.length));
       } }, '×'));
   };
-  const quotaVal = s.quota;
-  const quota = h('div', { class: 'quota' },
-    'The Recorder must file',
-    h('span', { class: 'stepper' },
-      h('button', { disabled: quotaVal <= 1, onclick: () => change(`quota:${n}`, () => app.draft.setShift(n, 'quota', quotaVal - 1), { rerender: true }), 'aria-label': 'Fewer' }, '−'),
-      h('span', null, quotaVal),
-      h('button', { disabled: quotaVal >= pick.length, onclick: () => change(`quota:${n}`, () => app.draft.setShift(n, 'quota', quotaVal + 1), { rerender: true }), 'aria-label': 'More' }, '+')),
-    `of the ${plural(pick.length, 'request')} drawn. Missing the quota costs a citation; meeting it pays a 20% bonus.`,
-    app.draft.shiftChanged(n, 'quota') ? h('button', { class: 'reset', onclick: () => change(`reset:${n}:quota`, () => app.draft.resetShift(n, 'quota'), { rerender: true }) }, '↺ original') : null);
+  const stepper = (field, val, max, label) => h('span', { class: 'stepper', 'data-stepper': field },
+    h('button', { disabled: val <= 1, onclick: () => change(`${field}:${n}`, () => app.draft.setShift(n, field, val - 1), { rerender: true }), 'aria-label': `Fewer ${label}` }, '−'),
+    h('span', null, val),
+    h('button', { disabled: val >= max, onclick: () => change(`${field}:${n}`, () => app.draft.setShift(n, field, val + 1), { rerender: true }), 'aria-label': `More ${label}` }, '+'));
+  const resetOf = (field) => (app.draft.shiftChanged(n, field) ? h('button', { class: 'reset', onclick: () => change(`reset:${n}:${field}`, () => app.draft.resetShift(n, field), { rerender: true }) }, '↺ original') : null);
+  const quota = h('div', null,
+    h('div', { class: 'quota' }, 'Each work order shows', stepper('show', s.show, pick.length, 'requests shown'),
+      `of these ${plural(pick.length, 'slot')}, drawn at random, so every game asks something different.`, resetOf('show')),
+    h('div', { class: 'quota', style: 'margin-top:8px' }, 'The Recorder must file', stepper('quota', s.quota, s.show, 'to file'),
+      `of the ${plural(s.show, 'request')} shown. Missing the quota costs a citation; meeting it pays a 20% bonus.`, resetOf('quota')));
   const slots = pick.map((opts, i) => h('div', { class: 'slot' },
     h('div', { class: 'no' }, `#${i + 1}`, h('br'), opts.length > 1 ? 'ONE OF' : ''),
     h('div', { class: 'opts' }, opts.map((k) => chip(k, i)),
@@ -723,7 +724,7 @@ function poolEditor(n) {
       h('button', { class: 'ib', title: opts.includes('self') && selfCount <= 1 ? 'THE RECORDER ends the game: it stays' : 'Remove this slot', disabled: pick.length <= 1 || (opts.includes('self') && selfCount <= 1), onclick: () => set(pick.filter((_, j) => j !== i)) }, '✕'))));
   return h('div', { class: 'card', 'data-pool': n },
     h('h2', null, 'WHAT THE WORK ORDER CAN ASK', app.draft.shiftChanged(n, 'pick') ? h('button', { class: 'reset', onclick: () => change(`reset:${n}:pick`, () => app.draft.resetShift(n, 'pick'), { rerender: true }) }, '↺ back to the original') : null),
-    h('p', { class: 'hint' }, `Each slot becomes one request when the shift starts, drawn at random from its list, never the same request twice${n === 6 ? ' (except THE SUBJECT OF EXPOSURE #N AGAIN, which picks a different photo each time)' : ''}. Only requests this shift's modules can judge are offered.`),
+    h('p', { class: 'hint' }, `When the shift starts, the work order draws some of these slots at random and one request from each slot's list, never the same request twice${n === 6 ? ' (except THE SUBJECT OF EXPOSURE #N AGAIN, which picks a different photo each time)' : ''}${n === LAST_DAY ? '. THE RECORDER is always drawn' : ''}. Only requests this shift's modules can judge are offered.`),
     quota, h('div', { class: 'slots' }, slots),
     h('div', { style: 'margin-top:10px' }, h('button', { class: 'add', disabled: pick.length >= 12, onclick: () => pickQuest(n, { exclude: [], onPick: (k) => set([...pick.map((o) => o.slice()), [k]]) }) }, '+ Add a slot')));
 }
