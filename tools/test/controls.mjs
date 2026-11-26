@@ -236,9 +236,20 @@ const upright = { viewport: { width: 390, height: 664 }, deviceScaleFactor: 2, i
     g.save.settings.hud = 1; await g.resume(); const resumed = g.save.settings.hud;
     return { shift, resumed };
   });
-  if (h.shift !== 0) fail('work order: still hidden at a new shift');
-  if (h.resumed !== 0) fail('work order: still hidden after resuming');
-  console.log(`film flash             ${r.open} open: red at ${r.open + 1} film, white at ${r.open + 2}; FILM I = ${r.size}; the list stays when OK hides the bar`);
+  if (h.shift !== 0) fail('bottom bar: still hidden at a new shift');
+  if (h.resumed !== 0) fail('bottom bar: still hidden after resuming');
+  // A save from before Nov 26, in the middle of a shift: its order has no filmMax, and its
+  // roll was the published FILM I (12), so 7 left reads 07/12, not 07/07.
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem('clearance.save.v1'));
+    s.phase = 'field'; s.order.film = 7; delete s.order.filmMax;
+    localStorage.setItem('clearance.save.v1', JSON.stringify(s));
+  });
+  await page.reload();
+  await page.waitForFunction(() => window.__clearance && window.__clearance.camera.ready, null, { timeout: 15000 });
+  const old = await page.evaluate(() => { const o = window.__clearance.game.order; return { film: o.film, max: o.filmMax }; });
+  if (old.film !== 7 || old.max !== 12) fail(`an old save's film reads ${old.film}/${old.max}, wanted 7/12`);
+  console.log(`film flash             ${r.open} open: red at ${r.open + 1} film, white at ${r.open + 2}; FILM I = ${r.size}; the list stays when OK hides the bar; an old save reads ${old.film}/${old.max}`);
   await ctx.close();
 }
 

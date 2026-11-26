@@ -35,6 +35,7 @@ export class Game {
     this.store = new PhotoStore(trial ? TRY_DB : undefined);
     this.save = trial ? this.trialSave(trial.shift) : loadSave();
     this.dropUnknownRequests();
+    this.fillFilmMax();
     this.sfx.on = this.save.settings.sound;
     this.index = new SharedIndex(this);
     this.indexPrint = null; // the last capture's 40x30 two-tone bits, while it's being judged
@@ -113,9 +114,18 @@ export class Game {
     this.persist();
   }
 
+  // A work order saved before Nov 26 has no filmMax. Its roll was one of the published sizes
+  // (12 / 18 / 24 / 36), so FILM reads what's left of that (07/12), not 07/07.
+  fillFilmMax() {
+    const o = this.save.order;
+    if (!o || o.filmMax) return;
+    o.filmMax = Math.max(o.film | 0, [12, 18, 24, 36][this.tier('film')] || 0);
+    this.persist();
+  }
+
   // Continue wherever the save left off (the camera has to be running first).
   async resume() {
-    this.save.settings.hud = 0; // OK in the viewfinder hides the work order; a resumed game shows it again
+    this.save.settings.hud = 0; // OK in the viewfinder hides the bottom bar; a resumed game shows it again
     if (this.camera.state !== 'live') {
       const ok = await this.camera.start(this.save.settings.facing);
       if (!ok) return this.go('nocam');
