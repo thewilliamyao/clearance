@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#cfd2d6">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Clearance">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<title>Clearance</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap">
+<style>
+  /* The back of a compact digicam: screen, control wheel with OK in the middle, SELECT and
+     the shutter. It is always sideways, like the real thing: the screen on the left, the
+     controls on the right. A phone held upright gets the whole unit turned a quarter, so it
+     reads once the phone is turned left (main.js: .turned). main.js sizes the screen and the
+     control cluster to fit. */
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; overscroll-behavior: none; background: #0e0d11; }
+  body { position: relative; }
+  /* No browser gestures anywhere: the page never scrolls, and a double tap or pinch must not
+     zoom it (iOS ignores user-scalable=no). input.js also cancels quick second taps. */
+  html, body, #device, #device * { touch-action: none; }
+  body {
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  }
+  button { font: inherit; color: inherit; border: 0; padding: 0; margin: 0; background: none; touch-action: none; cursor: pointer; }
+  button:focus { outline: none; }
+  button:focus-visible { outline: 2px solid #6aa0ff; outline-offset: 3px; }
+
+  /* --- body ------------------------------------------------------------------------------ */
+  #device {
+    /* SILVER (default) */
+    --m1: #f2f3f5; --m2: #dadde1; --m3: #bfc3c8; --m4: #a3a8ae;
+    --streak: rgba(255,255,255,.07); --streak2: rgba(0,0,0,.035);
+    --hi: rgba(255,255,255,.8); --seam: rgba(0,0,0,.2);
+    --print: #44474d; --print2: #70747b; --logo: #33363b;
+    --dial1: #3c3d42; --dial2: #17181b; --mark: #e8e9ec;
+    --key1: #44454a; --key2: #1e1f22;
+    --ch1: #fdfdfe; --ch2: #c4c8cd; --ch3: #8c9197;
+    --ridge1: rgba(0,0,0,.2); --ridge2: rgba(255,255,255,.75);
+    --hole: rgba(20,22,26,.7);
+    /* In the page, not position: fixed, and sized by main.js. On iOS 26 and later a fixed
+       layer can be drawn in one place while touches are read in another, so the buttons
+       looked higher than where they answered. */
+    position: absolute; left: 0; top: 0;
+    display: grid; gap: 8px 14px;
+    padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+    background:
+      repeating-linear-gradient(0deg, var(--streak) 0 1px, transparent 1px 3px),
+      repeating-linear-gradient(0deg, var(--streak2) 0 1px, transparent 1px 7px),
+      linear-gradient(180deg, var(--m1) 0%, var(--m2) 28%, var(--m3) 76%, var(--m4) 100%);
+    color: var(--print2);
+  }
+  #device[data-body="graphite"] {
+    --m1: #4b4c51; --m2: #38393e; --m3: #2a2b2f; --m4: #1f2023;
+    --streak: rgba(255,255,255,.035); --streak2: rgba(0,0,0,.1);
+    --hi: rgba(255,255,255,.14); --seam: rgba(0,0,0,.5);
+    --print: #c9ccd1; --print2: #8f9399; --logo: #e2e4e8;
+    --dial1: #2c2d31; --dial2: #0f1012; --mark: #d9dbdf;
+    --key1: #55565c; --key2: #2a2b2f;
+    --ch1: #e9ebee; --ch2: #a7abb1; --ch3: #6e7379;
+    --ridge1: rgba(0,0,0,.45); --ridge2: rgba(255,255,255,.12);
+    --hole: rgba(0,0,0,.75);
+  }
+  #device { grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; grid-template-areas: "lcd plate" "lcd pad" "lcd print"; }
+  /* Turned a quarter on an upright phone: the unit's top is the phone's right edge and its
+     left the phone's top, so each side keeps clear of the matching safe area. */
+  #device.turned {
+    transform-origin: 0 0;
+    padding: max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)) max(10px, env(safe-area-inset-top));
+  }
+  /* Desktop and tablets: the whole camera on a dark table. */
+  #device.framed {
+    inset: 0; margin: auto;
+    width: max-content; height: max-content; padding: 20px 24px 18px; border-radius: 28px; gap: 10px 22px;
+    box-shadow: 0 40px 80px rgba(0,0,0,.55), 0 10px 20px rgba(0,0,0,.35), inset 0 1px 0 var(--hi), inset 0 -2px 1px rgba(0,0,0,.25);
+  }
+  #device.framed::before { /* the seam where the back meets the front shell */
+    content: ''; position: absolute; inset: 6px; border-radius: 23px; pointer-events: none;
+    box-shadow: inset 0 0 0 1px var(--seam), inset 0 1px 0 1px var(--hi);
+  }
+  #device.framed::after { /* strap lug */
+    content: ''; position: absolute; right: -10px; top: 40px; width: 11px; height: 28px; border-radius: 0 7px 7px 0;
+    background: linear-gradient(90deg, #7d8288, #eceef1 45%, #9ca1a7); box-shadow: 2px 2px 3px rgba(0,0,0,.4);
+  }
+
+  /* --- top row: logo, REC lamp, speaker -------------------------------------------------- */
+  #plate { grid-area: plate; display: flex; align-items: center; gap: 8px; padding: 0 2px; min-height: 22px; min-width: 0; }
+  #logo { font: italic 900 17px/1 "Arial Black", "Helvetica Neue", Arial, sans-serif; letter-spacing: -.02em; color: var(--logo); text-shadow: 0 1px 0 var(--hi); white-space: nowrap; }
+  #model { font-size: 8px; font-weight: 700; letter-spacing: .24em; white-space: nowrap; }
+  .grow { flex: 1; }
+  #rec { display: flex; align-items: center; gap: 5px; font-size: 8px; font-weight: 700; letter-spacing: .18em; }
+  #led { width: 7px; height: 7px; border-radius: 50%; background: #561f18; box-shadow: inset 0 1px 1px rgba(0,0,0,.65), 0 0 0 1.5px rgba(0,0,0,.18), 0 1px 0 1.5px var(--hi); }
+  #led.on { background: #ff4a36; box-shadow: 0 0 7px #ff4a36, inset 0 0 1px #fff, 0 0 0 1.5px rgba(0,0,0,.18); }
+  .grille { width: 33px; height: 13px; background: radial-gradient(circle, var(--hole) 0 1.15px, transparent 1.5px) 0 0 / 5.5px 4.4px; }
+
+  /* --- the screen ------------------------------------------------------------------------ */
+  #lcd { grid-area: lcd; display: grid; place-items: center; min-width: 0; min-height: 0; }
+  #bezel {
+    position: relative; padding: 8px; border-radius: 9px; background: #09090b;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.4), 0 1px 0 1.5px var(--hi), inset 0 0 0 1px rgba(255,255,255,.05), inset 0 3px 10px rgba(0,0,0,.95);
+  }
+  #bezel::after { /* the glass */
+    content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+    background: linear-gradient(117deg, rgba(255,255,255,.075) 0%, rgba(255,255,255,.02) 36%, transparent 36.4%);
+  }
+  #screen { display: block; width: 320px; height: 240px; image-rendering: pixelated; image-rendering: crisp-edges; cursor: crosshair; }
+
+  /* --- printing under the screen: megapixels and the Office's asset tag ------------------ */
+  #print { grid-area: print; display: flex; align-items: center; gap: 10px; padding: 0 2px; min-height: 28px; min-width: 0; }
+  #mp { font-size: 8px; font-weight: 700; letter-spacing: .16em; white-space: nowrap; }
+  #mp b { font-size: 12px; letter-spacing: .02em; color: var(--print); margin-right: 3px; }
+  #tag {
+    margin-left: auto; display: grid; gap: 2px; padding: 3px 6px; border-radius: 2px; background: #f3f1e8; color: #222226;
+    font: 8px/1 'Silkscreen', ui-monospace, monospace; letter-spacing: .03em; white-space: nowrap;
+    transform: rotate(-1.3deg); box-shadow: 0 1px 1.5px rgba(0,0,0,.35), inset 0 0 0 1px rgba(0,0,0,.07);
+  }
+  #tag .bc { height: 7px; background: repeating-linear-gradient(90deg, #222226 0 1px, transparent 1px 2px, #222226 2px 4px, transparent 4px 5px, #222226 5px 6px, transparent 6px 8px, #222226 8px 9px, transparent 9px 11px, #222226 11px 13px, transparent 13px 14px); }
+  #tag .row { display: flex; justify-content: space-between; gap: 8px; }
+
+  /* --- the controls ---------------------------------------------------------------------- */
+  #pad { grid-area: pad; display: grid; place-items: center; min-width: 0; min-height: 0; }
+  #padbox { position: relative; }
+  #cluster { position: absolute; left: 0; top: 0; transform-origin: 0 0; width: 236px; height: 282px; }
+  .lab { position: absolute; font-size: 8px; font-weight: 700; letter-spacing: .2em; text-align: center; pointer-events: none; white-space: nowrap; }
+
+  /* Control wheel: a black 4-way dial in a chrome bezel, OK in the middle. */
+  #wheel {
+    position: absolute; width: 164px; height: 164px; border-radius: 50%; touch-action: none; cursor: pointer;
+    background: conic-gradient(from 200deg, var(--ch1), var(--ch3) 20%, var(--ch1) 40%, var(--ch2) 58%, var(--ch3) 80%, var(--ch1));
+    box-shadow: 0 1px 0 1px var(--hi), 0 3px 2px rgba(0,0,0,.18), 0 7px 14px rgba(0,0,0,.28), inset 0 0 0 1px rgba(0,0,0,.28);
+  }
+  #wheel .ring {
+    position: absolute; inset: 5px; border-radius: 50%; overflow: hidden;
+    background: radial-gradient(circle at 50% 28%, var(--dial1), var(--dial2) 74%);
+    box-shadow: inset 0 1px 1px rgba(255,255,255,.2), inset 0 -3px 7px rgba(0,0,0,.7);
+  }
+  #wheel .ring::before { /* knurled edge */
+    content: ''; position: absolute; inset: 0; border-radius: 50%;
+    background: repeating-conic-gradient(rgba(255,255,255,.09) 0 1.6deg, transparent 1.6deg 4.5deg);
+    -webkit-mask: radial-gradient(closest-side, transparent 85%, #000 86.5%); mask: radial-gradient(closest-side, transparent 85%, #000 86.5%);
+  }
+  #wheel .mk { position: absolute; width: 0; height: 0; border: 6px solid transparent; opacity: .85; filter: drop-shadow(0 1px 0 rgba(0,0,0,.7)); }
+  #wheel .mk.u { left: calc(50% - 6px); top: 19px; border-bottom: 8px solid var(--mark); border-top-width: 0; }
+  #wheel .mk.d { left: calc(50% - 6px); bottom: 19px; border-top: 8px solid var(--mark); border-bottom-width: 0; }
+  #wheel .mk.l { top: calc(50% - 6px); left: 19px; border-right: 8px solid var(--mark); border-left-width: 0; }
+  #wheel .mk.r { top: calc(50% - 6px); right: 19px; border-left: 8px solid var(--mark); border-right-width: 0; }
+  #wheel .shade { /* the side being pressed dips into the body */
+    position: absolute; inset: 0; border-radius: 50%; opacity: 0; pointer-events: none;
+    background: radial-gradient(130% 62% at 50% 0%, rgba(0,0,0,.72), rgba(0,0,0,.25) 45%, transparent 62%);
+    transform: rotate(var(--rot, 0deg));
+  }
+  #wheel[data-dir] .shade { opacity: 1; }
+  #wheel[data-dir="RIGHT"] { --rot: 90deg; }
+  #wheel[data-dir="DOWN"] { --rot: 180deg; }
+  #wheel[data-dir="LEFT"] { --rot: 270deg; }
+  #wheel[data-dir="UP"] .mk.u, #wheel[data-dir="DOWN"] .mk.d, #wheel[data-dir="LEFT"] .mk.l, #wheel[data-dir="RIGHT"] .mk.r { opacity: .45; }
+  #ok {
+    position: absolute; left: 50%; top: 50%; width: 64px; height: 64px; margin: -32px 0 0 -32px; border-radius: 50%; z-index: 2;
+    background: radial-gradient(circle at 42% 30%, var(--ch1), var(--ch2) 58%, var(--ch3));
+    box-shadow: 0 0 0 4px rgba(0,0,0,.62), 0 0 0 5px rgba(255,255,255,.07), 0 3px 4px rgba(0,0,0,.5), inset 0 -2px 3px rgba(0,0,0,.2), inset 0 1px 1px #fff;
+    font-size: 12px; font-weight: 800; line-height: 64px; letter-spacing: .06em; color: #45484e; text-align: center;
+  }
+  #ok.is-pressed { transform: translateY(1px) scale(.97); filter: brightness(.9); box-shadow: 0 0 0 4px rgba(0,0,0,.66), 0 1px 1px rgba(0,0,0,.45), inset 0 1px 3px rgba(0,0,0,.3); }
+
+  /* SELECT: a small rubber key with a menu mark. */
+  #select {
+    position: absolute; width: 58px; height: 24px; border-radius: 12px;
+    background: linear-gradient(180deg, var(--key1), var(--key2));
+    box-shadow: 0 0 0 2px rgba(0,0,0,.1), 0 1px 0 2px var(--hi), 0 2px 3px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.2);
+  }
+  #select::after { content: ''; position: absolute; left: 50%; top: 50%; width: 14px; height: 2px; margin: -4px 0 0 -7px; background: #c7cacf; border-radius: 1px; box-shadow: 0 3px 0 #c7cacf, 0 6px 0 #c7cacf; opacity: .85; }
+  #select.is-pressed { transform: translateY(1px); box-shadow: 0 0 0 2px rgba(0,0,0,.1), 0 1px 0 2px var(--hi), inset 0 1px 4px rgba(0,0,0,.6); }
+
+  /* SHUTTER: a red dome inside a knurled chrome collar. */
+  #shutter {
+    position: absolute; width: 78px; height: 78px; border-radius: 50%;
+    background: repeating-conic-gradient(var(--ch2) 0 2.5deg, var(--ch1) 2.5deg 5deg);
+    box-shadow: 0 1px 0 1px var(--hi), 0 3px 2px rgba(0,0,0,.2), 0 7px 14px rgba(0,0,0,.3), inset 0 0 0 1px rgba(0,0,0,.3);
+  }
+  #shutter::before { content: ''; position: absolute; inset: 9px; border-radius: 50%; background: #131417; box-shadow: inset 0 2px 3px rgba(0,0,0,.85), 0 1px 0 rgba(255,255,255,.35); }
+  #shutter::after {
+    content: ''; position: absolute; inset: 13px; border-radius: 50%; transition: transform .05s;
+    background: radial-gradient(circle at 40% 30%, #ff9483 0%, #de4231 36%, #a6281c 74%, #6a170f 100%);
+    box-shadow: 0 2px 2px rgba(0,0,0,.55), inset 0 -3px 5px rgba(0,0,0,.35), inset 0 1px 1px rgba(255,255,255,.55);
+  }
+  #shutter.is-pressed::after { transform: translateY(2px) scale(.96); filter: brightness(.86); box-shadow: 0 0 1px rgba(0,0,0,.5), inset 0 -1px 3px rgba(0,0,0,.4); }
+
+  .grip { position: absolute; border-radius: 4px; background: repeating-linear-gradient(0deg, var(--ridge1) 0 1px, var(--ridge2) 1px 2px, transparent 2px 6px); }
+  .speaker { position: absolute; background: radial-gradient(circle, var(--hole) 0 1.2px, transparent 1.6px) 0 0 / 6px 5px; }
+
+  /* SELECT and the shutter above the wheel, the grip at the edge. */
+  #cluster #select { left: 10px; top: 30px; }
+  #cluster .lab.sel { left: 10px; top: 62px; width: 58px; }
+  #cluster #shutter { left: 150px; top: 6px; }
+  #cluster .lab.sh { left: 150px; top: 92px; width: 78px; }
+  #cluster .speaker { left: 16px; top: 84px; width: 46px; height: 16px; }
+  #cluster #wheel { left: 34px; top: 112px; }
+  #cluster .grip { left: 212px; top: 146px; width: 16px; height: 96px; }
+
+  #keys { display: none; position: fixed; left: 0; right: 0; bottom: 14px; text-align: center; font: 8px/1 'Silkscreen', monospace; letter-spacing: .12em; color: #6d6874; }
+  @media (hover: hover) and (pointer: fine) { body.framed #keys { display: block; } }
+  #cam { position: fixed; width: 2px; height: 2px; opacity: 0; pointer-events: none; left: 0; top: 0; }
+  #fault { position: fixed; left: 8px; right: 8px; bottom: 8px; font: 11px ui-monospace, monospace; color: #ffb0a6; background: rgba(40,0,0,.85); padding: 8px; border-radius: 6px; white-space: pre-wrap; z-index: 9; }
+</style>
+</head>
+<body>
+<div id="device" data-body="silver">
+  <div id="plate"><span id="logo">OCR-7</span><span id="model">FIELD RECORDER</span><span class="grow"></span><span id="rec">REC<span id="led"></span></span><span class="grille"></span></div>
+  <div id="lcd"><div id="bezel"><canvas id="screen" width="320" height="240" aria-label="Camera screen"></canvas></div></div>
+  <div id="print">
+    <span id="mp"><b>0.0012</b>MEGA PIXELS</span>
+    <span id="tag"><span>OFFICE OF CIVIC RECORD</span><span class="bc"></span><span class="row"><span>PROPERTY</span><span>NO. 3-17</span></span></span>
+  </div>
+  <div id="pad"><div id="padbox"><div id="cluster">
+    <button id="select" data-btn="SELECT" aria-label="Select"></button><span class="lab sel">SELECT</span>
+    <div id="wheel" role="group" aria-label="Direction pad">
+      <div class="ring"><i class="mk u"></i><i class="mk r"></i><i class="mk d"></i><i class="mk l"></i><span class="shade"></span></div>
+      <button id="ok" data-btn="OK" aria-label="OK">OK</button>
+    </div>
+    <button id="shutter" data-btn="SHUTTER" aria-label="Shutter"></button><span class="lab sh">SHUTTER</span>
+    <span class="speaker"></span><span class="grip"></span>
+  </div></div></div>
+</div>
+<div id="keys">KEYS: ARROWS · ENTER = OK · SPACE = SHUTTER · ESC = SELECT</div>
+<video id="cam" playsinline muted autoplay></video>
+<noscript><p style="color:#ddd;padding:20px">The unit needs JavaScript.</p></noscript>
+<script type="module" src="src/main.js"></script>
+</body>
+</html>

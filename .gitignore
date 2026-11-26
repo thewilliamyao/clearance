@@ -1,0 +1,9 @@
+# Test output and local photo fixtures (some use William's own photos and headshots: never commit them)
+tools/test/out/
+tools/test/fixtures/
+# The controller's backups of content/edits.json (serve.py)
+content/backups/
+# Installs and the shared index's local wrangler state
+node_modules/
+server/.wrangler/
+.DS_Store

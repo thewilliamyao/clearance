@@ -1,0 +1,6 @@
+{
+  "name": "clearance",
+  "private": true,
+  "type": "module",
+  "description": "Clearance: surveillance digicam game. No build step; tools/ holds the offline scripts and tests."
+}

@@ -1,0 +1,26 @@
+# Clearance: the shared index (a Worker + a D1 database). See README.md in this folder.
+name = "clearance-index"
+main = "src/worker.js"
+compatibility_date = "2026-11-01"
+workers_dev = true
+
+# No Workers Logs: the index keeps no record of who sent or viewed what.
+[observability]
+enabled = false
+
+[[d1_databases]]
+binding = "DB"
+database_name = "clearance-index"
+# Made by `wrangler d1 create clearance-index` on Nov 21 2026 (William's account, region ENAM).
+database_id = "eea629b2-1065-40a2-97a4-a2f4a7e8f2b6"
+migrations_dir = "migrations"
+
+[vars]
+# Pages that may upload or delete (the public game, and serve.py on the Mac).
+ALLOWED_ORIGINS = "https://thewilliamyao.github.io,http://localhost:8077,http://127.0.0.1:8077"
+# "1": also the game run through `serve.py --tunnel` (https://*.trycloudflare.com) for phone tests.
+ALLOW_TUNNELS = "1"
+# "1": new prints wait for approval (server/admin.mjs approve, or the page's admin view) before anyone sees them.
+HOLD_NEW = "0"
+UPLOADS_PER_HOUR = "30"
+UPLOADS_PER_DAY = "1000"

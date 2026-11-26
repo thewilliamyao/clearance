@@ -1,0 +1,17 @@
+{
+  "name": "clearance-tools",
+  "private": true,
+  "type": "module",
+  "description": "Offline tools and tests for the Clearance surveillance-camera game (not needed to play).",
+  "scripts": {
+    "embed": "node embed_prompts.mjs",
+    "bluenoise": "node make_bluenoise.mjs",
+    "test": "node test/unit.mjs",
+    "e2e": "node test/e2e.mjs",
+    "controller": "node test/controller.mjs && node test/controller-github.mjs"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "4.3.1",
+    "playwright": "1.49.1"
+  }
+}
