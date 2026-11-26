@@ -130,7 +130,7 @@ export class FakeGame {
   get dayDef() { return DAYS[this.save.day - 1]; }
   drawOrder(seed) {
     const { requests, quota } = makeOrder(this.day, seeded(seed * 7919 + this.day), []);
-    return { requests, quota, film: FILMS[this.tier('film')].n, earned: 0, shots: 0, seed, day: this.day };
+    return { requests, quota, film: FILMS[this.tier('film')].n, filmMax: FILMS[this.tier('film')].n, earned: 0, shots: 0, seed, day: this.day };
   }
   tier(track) { return Math.max(0, this.save.own[track] || 0); }
   trackDef(track) { return TRACKS[track]; }
@@ -197,14 +197,14 @@ export const SCREENS = {
   filed(n, seed, text = 'SOMETHING RED', merit = 33) {
     const g = new FakeGame(n);
     g.renderLive(1);
-    stamp(g.scr, merit ? [[t('develop.filed'), 3], [fitText(text, 220), 1], [t('develop.merit', { MERIT: merit }), 2]] : [[t('develop.filed'), 3], [text, 1]], 160, 62, P.stamp, { seed: 3, angle: -0.07 });
+    S.filedStamp(g.scr, P, text, merit, 3);
     drawText(g.scr, t('develop.continue'), W - 4, 3, P.paper, { align: 'right', bg: P.ink });
     return g.done();
   },
   notFiled(n, seed, why) {
     const g = new FakeGame(n);
     g.renderLive(1);
-    stamp(g.scr, [[t('develop.notFiled'), 2], [fitText(why || t('verdict.noSubject'), 250), 1]], 160, 52, P.stamp, { seed: 4, angle: 0.04 });
+    S.notFiledStamp(g.scr, P, why || t('verdict.noSubject'), 4);
     drawText(g.scr, t('develop.continue'), W - 4, 3, P.paper, { align: 'right', bg: P.ink });
     return g.done();
   },

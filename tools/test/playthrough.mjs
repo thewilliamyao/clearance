@@ -170,33 +170,42 @@ async function indexChecks() {
 // Shifts 3-7 through the developer jump, each with a picture that should file something.
 // Each picture aims at the request it should meet (only the selected request is judged); if
 // the shift's random order doesn't have that one, the first open request stays selected.
-// Shift 5: answering NO to the unit's YOU SURE? withdraws that request for the shift.
-async function refusalCheck() {
+// Shift 5: NO to ARE YOU SURE ...? files nothing and the request stays open for another photo
+// (the refusal is still counted, ENDINGS.md).
+async function declineCheck() {
   await ev(() => { const g = window.__clearance.game; g.save.phase = 'field'; g.go('field'); });
   const key = await ev(() => {
     const g = window.__clearance.game;
-    const r = g.order.requests.find((q) => !q.done && !q.withdrawn && !q.asked && ['notbelong', 'sadness', 'tired', 'waiting', 'hurry', 'alone'].includes(q.key));
+    const r = g.order.requests.find((q) => !q.done && !q.withdrawn && ['notbelong', 'sadness', 'tired', 'waiting', 'hurry', 'alone'].includes(q.key));
     if (!r) return null;
     g.screens.field.focus = g.order.requests.indexOf(r);
     return r.key;
   });
-  if (!key) { console.log('  shift 5 NO: no open request with a subject left to refuse'); return; }
+  if (!key) { console.log('  shift 5 NO: no open request with a subject left to try'); return; }
+  const before = await ev(() => ({ merit: window.__clearance.game.save.merit, film: window.__clearance.game.order.film }));
   await useImage('studio'); await page.waitForTimeout(500);
   await press('SHUTTER', 5000);
   const asked = await ev(() => { const l = window.__clearance.game.store.list; return !!l[l.length - 1].verdict.soft; });
   if (!asked) { errors.push(`shift 5 NO: the unit did not ask about ${key}`); await press('OK', 600); return; }
   await press('RIGHT', 400); await shot('develop-day5-no');
   await press('OK', 900);
-  const st = await ev((k) => { const g = window.__clearance.game, r = g.order.requests.find((q) => q.key === k); return { state: g.stateName, withdrawn: !!r.withdrawn, refusals: g.save.refusals, refused: !!g.store.list[g.store.list.length - 1].verdict.refused }; }, key);
+  const st = await ev((k) => {
+    const g = window.__clearance.game, r = g.order.requests.find((q) => q.key === k), v = g.store.list[g.store.list.length - 1].verdict;
+    return { state: g.stateName, open: !r.done && !r.withdrawn, refusals: g.save.refusals, refused: !!v.refused, filed: !!v.ok, merit: g.save.merit, film: g.order.film };
+  }, key);
   console.log(`  shift 5 NO on ${key}: ${JSON.stringify(st)}`);
-  if (!st.withdrawn || st.refusals !== 1 || !st.refused) errors.push('NO did not withdraw the request');
+  if (st.state !== 'field') errors.push(`NO should go back to the field, went to ${st.state}`);
+  if (!st.open || st.filed) errors.push('NO filed the photo or closed the request');
+  if (st.refusals !== 1 || !st.refused) errors.push('NO was not counted as a refusal');
+  if (st.merit !== before.merit) errors.push('NO paid merit');
+  if (st.film !== before.film - 1) errors.push('the photo did not use a frame');
   if (st.state === 'field') {
-    await shot('field-day5-withdrawn');
+    await shot('field-day5-after-no');
     const sel = await ev(() => { const f = window.__clearance.game.screens.field; f.fixFocus(0); const r = f.selected(); return r ? r.key : null; });
-    if (sel === key) errors.push('a withdrawn request can still be selected');
+    if (sel !== key) errors.push(`after NO the request should still be selected for another photo (got ${sel})`);
   }
 }
-const plan = { 3: [['face', 'person'], ['face', 'face']], 4: [['face', 'atyou'], ['turned', 'away']], 5: [['sunset', 'waiting'], ['sunset', 'waiting'], ['turned', 'alone'], ['studio', 'alone']], 6: [['room2', 'place'], ['face', 'again']], 7: [['face', 'self']] };
+const plan = { 3: [['face', 'person'], ['face', 'face']], 4: [['face', 'atyou'], ['turned', 'away']], 5: [['sunset', 'waiting'], ['studio', 'alone']], 6: [['room2', 'place'], ['face', 'again']], 7: [['face', 'self']] };
 const aim = (key) => ev((k) => { const g = window.__clearance.game, i = g.order.requests.findIndex((r) => r.key === k && !r.done); if (i >= 0) g.screens.field.focus = i; return i; }, key);
 for (const day of [3, 4, 5, 6, 7]) {
   await ev((d) => { const g = window.__clearance.game; g.jumpTo(d); g.go('order'); }, day);
@@ -211,12 +220,21 @@ for (const day of [3, 4, 5, 6, 7]) {
     if (k === 0) await shot(`field-day${day}`);
     await press('SHUTTER', 5000);
     await shot(`develop-day${day}-${img}`);
-    const v = await ev(() => { const l = window.__clearance.game.store.list; const p = l[l.length - 1]; return p.verdict; });
-    console.log(`  shift ${day} ${img}: ${v.ok ? 'FILED ' + v.text + ' +' + v.merit : 'NOT FILED (' + v.why + ')'}`);
+    const last = () => ev(() => { const l = window.__clearance.game.store.list; const p = l[l.length - 1]; return p.verdict; });
+    let v = await last(), asked = '';
+    // Shift 5 asks ARE YOU SURE ...?: YES (selected first) files this photo, stamp and all.
+    if (v.soft && !v.ok) {
+      asked = `ASKED (${v.why}) → YES → `;
+      await press('OK', 900); await shot(`develop-day${day}-${img}-yes`);
+      v = await last();
+      if (!v.ok) errors.push(`shift ${day}: YES did not file the photo`);
+      if (v.ok && v.marks.some((m) => /\?$/.test(m.label || ''))) errors.push('the filed subject still has its question mark');
+    }
+    console.log(`  shift ${day} ${img}: ${asked}${v.ok ? 'FILED ' + v.text + ' +' + v.merit : 'NOT FILED (' + v.why + ')'}`);
     await press('OK', 600);
     if ((await state()) !== 'field') break;
   }
-  if (day === 5) { await indexChecks(); await refusalCheck(); }
+  if (day === 5) { await indexChecks(); await declineCheck(); }
 }
 await expect('ending', 'self-portrait → ending');
 await page.waitForTimeout(2500); await shot('ending-filed-contact');
@@ -255,7 +273,10 @@ await page.waitForTimeout(600); await shot('report-from-bubble');
 // The other ending: open the back of the unit on shift 5.
 await ev(() => { const g = window.__clearance.game; g.newGame(); g.jumpTo(5); g.save.phase = 'field'; g.go('field'); });
 await useImage('room'); await page.waitForTimeout(300);
-await press('SHUTTER', 4000); await press('OK', 500);
+await press('SHUTTER', 4000);
+// If the unit asks ARE YOU SURE ...? about the room, answer NO: back to the field, nothing filed.
+if (await ev(() => { const l = window.__clearance.game.store.list; return !!l[l.length - 1].verdict.soft; })) await press('RIGHT', 200);
+await press('OK', 500);
 await press('SELECT', 400);
 for (let k = 0; k < 7; k++) await press('DOWN', 120);
 await shot('menu-day5');

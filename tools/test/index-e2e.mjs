@@ -47,11 +47,11 @@ try {
     g.save.settings.share = true; g.jumpTo(5); g.save.phase = 'field'; g.go('field');
     await Promise.all(g.enabledModules().map((m) => g.modules.ensure(m)));
   });
-  // File two requests: each is asked once, then filed on the second photo.
+  // File two requests: each photo asks ARE YOU SURE ...?, OK answers YES (filed), OK again leaves.
   const filed = [];
   for (let n = 0; n < 2; n++) {
     const key = await ev(() => { const g = window.__clearance.game, i = g.order.requests.findIndex((r) => !r.done && r.key !== 'hiding'); g.screens.field.focus = i; return g.order.requests[i].key; });
-    for (let shot = 0; shot < 2; shot++) { await press('SHUTTER', 4500); await press('OK', 600); }
+    await press('SHUTTER', 4500); await press('OK', 1200); await press('OK', 600);
     await ev(() => { const g = window.__clearance.game; g.screens.field.bubble = null; });
     filed.push(key);
   }

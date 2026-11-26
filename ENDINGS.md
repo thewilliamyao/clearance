@@ -1,6 +1,6 @@
 # Endings that follow the Recorder (design, Nov 21 2026)
 
-Status: design, except the NO choice on "YOU SURE?" (decision 1: built Nov 21, published the same evening together with the shared index, public commit 1ceeca5). Waiting on William's answers (end of this file). The shared index has landed, so nothing else blocks the build.
+Status: design, except the NO choice on "YOU SURE?" (decision 1: built Nov 21, published the same evening together with the shared index, public commit 1ceeca5). **Nov 26, William changed the bubble:** every shift 5 photo now asks "ARE YOU SURE THIS PERSON IS ...?" with YES (files that photo) and NO (files nothing; the Recorder can take another). Nothing is withdrawn any more; a NO still counts in `save.refusals`, so the refusal signal below still exists, but refusing no longer costs the quota by itself. Waiting on William's answers (end of this file). The shared index has landed, so nothing else blocks the build.
 
 ## Why
 

@@ -115,7 +115,7 @@ export function checkQuest(key, q, warn = []) {
     out.rule = q.rule;
     out.label = str(q.label);
     if (!out.label || !out.label.trim()) return bad('it needs the label the Recorder files them as');
-    out.ask = str(q.ask) || `OH, SO THAT'S ${out.label}?`;
+    out.ask = str(q.ask) || `ARE YOU SURE THIS IS ${out.label}?`;
   }
   return out;
 }

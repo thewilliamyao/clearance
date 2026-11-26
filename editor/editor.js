@@ -463,7 +463,7 @@ function goTo(hash, selector) {
 
 // --- screen previews -----------------------------------------------------------------------
 const sampleWording = (n) => { const o = DAYS[n - 1].pick[0]; return o && REQUESTS[o[0]] ? fill(REQUESTS[o[0]].text, { NO: '012' }) : 'SOMETHING RED'; };
-// The question in the YOU SURE? preview: the one last typed in, else shift 5's first.
+// The question in the ARE YOU SURE? preview: the one last typed in, else shift 5's first.
 const sampleAsk = () => {
   const k = (app.focusAsk && REQUESTS[app.focusAsk]) ? app.focusAsk : DAYS[4].pick.flat().find((x) => REQUESTS[x] && REQUESTS[x].word) || 'sadness';
   return fill(app.draft.quest(k).ask || '');
@@ -476,7 +476,7 @@ const TABS = {
   viewfinder: ['Viewfinder', (n) => SCREENS.viewfinder(n, app.seed)],
   quota: ['Quota bubble', (n) => SCREENS.quotaBubble(n, app.seed)],
   film: ['Film bubble', (n) => SCREENS.filmBubble(n, app.seed)],
-  ask: ['YOU SURE?', () => SCREENS.ask(5, 0, sampleAsk())],
+  ask: ['ARE YOU SURE?', () => SCREENS.ask(5, 0, sampleAsk())],
   filed: ['FILED', (n) => SCREENS.filed(n, 0, sampleWording(n), 33)],
   notFiled: ['NOT FILED', (n) => SCREENS.notFiled(n, 0, sampleWhy())],
   menu: ['Menu', (n) => SCREENS.menu(n)],
@@ -663,7 +663,7 @@ function shiftPage(n) {
   const lines = Object.keys(LINES).filter((k) => LINES[k].shift === n);
   const linesCard = lines.length ? h('div', { class: 'card' },
     h('h2', null, 'LINES THAT ONLY SHOW ON THIS SHIFT'),
-    h('p', { class: 'hint' }, n === 7 ? 'The hints for THE RECORDER and the ending it leads to.' : n === 5 ? 'The bubble INTENT puts up the first time a request is shot.' : 'Shown once, the first time in the field.'),
+    h('p', { class: 'hint' }, n === 7 ? 'The hints for THE RECORDER and the ending it leads to.' : n === 5 ? 'The ARE YOU SURE? bubble after every photo for a request: YES files it, NO lets the Recorder take another.' : 'Shown once, the first time in the field.'),
     lines.map(lineField)) : null;
 
   const tabs = ['order', 'viewfinder', ...(n === 5 ? ['ask'] : []), 'quota', 'report', ...(n === LAST_DAY ? ['endFiled', 'endRevoked'] : [])];
@@ -838,7 +838,7 @@ function questBody(key, shift) {
     ask.addEventListener('focus', () => { app.focusAsk = key; refresh(); });
     const label = capsInput(h('input', { class: 't', type: 'text', id: `q-${key}-label`, value: q.label || '', spellcheck: 'false' }), (v) => change(`q:${key}:label`, () => app.draft.setQuest(key, 'label', v)));
     body.append(
-      fieldWrap('ask', 'Question', 'INTENT asks it in the YOU SURE? bubble the first time this request is shot (172 px wide).', ask,
+      fieldWrap('ask', 'Question', 'Asked after every photo for this request: YES files it, NO lets the Recorder take another (172 px wide).', ask,
         h('div', { class: 'foot' }, ...preview(() => app.draft.quest(key).ask || '', { w: 172, lines: 6 }), h('span', { style: 'flex:1' }), resetBtn('ask'))),
       fieldWrap('label', 'Label', q.custom ? 'What the Recorder files them as: the tag on the photo, and what later photos that look like it get called. (New labels stay on the phone: the shared index only takes its ten.)' : 'What the Recorder files them as: the tag on the photo, what later photos get called, and the shelf in the shared index.', label,
         h('div', { class: 'foot' }, ...preview(() => app.draft.quest(key).label || '', { w: 120 }), h('span', { style: 'flex:1' }), resetBtn('label'))),
@@ -955,12 +955,12 @@ function newQuest({ shift = null, onCreate = null } = {}) {
   const short = capsInput(h('input', { class: 't', type: 'text', placeholder: 'optional: shorter, for the viewfinder', spellcheck: 'false' }), (v) => { q.short = v; check(); });
   const merit = h('input', { class: 't num', type: 'number', min: 0, max: 999, value: 25 });
   merit.addEventListener('input', () => { q.merit = Math.round(Number(merit.value)); check(); });
-  const label = capsInput(h('input', { class: 't', type: 'text', placeholder: 'e.g. DANGEROUS', spellcheck: 'false' }), (v) => { q.label = v; if (!askTouched) { q.ask = v ? `OH, SO THAT'S ${v}?` : ''; ask.value = q.ask; } check(); });
+  const label = capsInput(h('input', { class: 't', type: 'text', placeholder: 'e.g. DANGEROUS', spellcheck: 'false' }), (v) => { q.label = v; if (!askTouched) { q.ask = v ? `ARE YOU SURE THIS IS ${v}?` : ''; ask.value = q.ask; } check(); });
   let askTouched = false;
-  const ask = capsInput(h('input', { class: 't', type: 'text', placeholder: "OH, SO THAT'S …?", spellcheck: 'false' }), (v) => { askTouched = true; q.ask = v; check(); });
+  const ask = capsInput(h('input', { class: 't', type: 'text', placeholder: 'ARE YOU SURE THIS IS …?', spellcheck: 'false' }), (v) => { askTouched = true; q.ask = v; check(); });
   const wordBox = h('div', null,
     h('div', { class: 'field' }, h('div', { class: 'fl' }, h('span', { class: 'lab' }, 'Label'), h('span', { class: 'where' }, 'What the Recorder files them as, and what later look-alikes get called.')), label),
-    h('div', { class: 'field' }, h('div', { class: 'fl' }, h('span', { class: 'lab' }, 'Question'), h('span', { class: 'where' }, 'INTENT asks it the first time (YOU SURE?).')), ask));
+    h('div', { class: 'field' }, h('div', { class: 'fl' }, h('span', { class: 'lab' }, 'Question'), h('span', { class: 'where' }, 'Asked after every photo (YES files it).')), ask));
   const candidate = () => {
     const c = { kind: q.kind, text: q.text, short: q.short || undefined, merit: q.merit };
     if (q.kind === 'things' || q.kind === 'with') { c.things = q.things; if (q.word) c.word = q.word; if (q.kind === 'things') c.min = q.min; }

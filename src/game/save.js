@@ -23,7 +23,7 @@ export function defaultSave() {
     citations: 0,
     ending: null,
     selfMisses: 0,
-    refusals: 0, // shift 5: times the Recorder answered NO to "YOU SURE?" (ENDINGS.md)
+    refusals: 0, // shift 5: times the Recorder answered NO to "ARE YOU SURE ...?" (ENDINGS.md)
     // share: send shift 5 filings to the shared index as 40x30 two-tone prints (off until the
     // Recorder turns it on; see shared-index.js).
     settings: { theme: 'ledger', body: 'silver', sound: true, haptics: true, tapShoot: true, facing: 'environment', hud: 0, share: false },

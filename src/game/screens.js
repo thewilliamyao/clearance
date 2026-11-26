@@ -200,8 +200,11 @@ export class Viewfinder {
     this.fixFocus(0);
     this.bubble = null;
     this.live = null; this.liveT = 0.15;
-    // Back from a photo with less film than the open requests + 2: the FILM box flashes.
-    this.filmFlash = prev === 'develop' && g.order && g.order.film > 0 && g.order.film < this.open().length + 2 ? 1.5 : 0;
+    // Back from a photo, so one less frame: the FILM box flashes white, or red once fewer are
+    // left than the open requests + 2.
+    const o = g.order, used = prev === 'develop' && o && o.film > 0;
+    this.filmRed = !!(used && o.film < this.open().length + 2);
+    this.filmFlash = used ? (this.filmRed ? 1.5 : 1.0) : 0;
     if (arg === 'quota' && g.order && !g.order.closed) this.popBubble('quota');
     this.hintT = prev === 'order' && g.day === 1 && !g.order.shots ? 7 : 0; // first shift only
     if (g.day === LAST_DAY && g.save.selfMisses >= 2) g.toast(g.save.selfMisses >= 4 ? t('field.selfHint2') : t('field.selfHint'), 4);
@@ -226,7 +229,7 @@ export class Viewfinder {
     const g = this.g, i = g.input;
     this.hintT = Math.max(0, this.hintT - dt);
     this.zoomT = Math.max(0, this.zoomT - dt);
-    this.filmFlash = Math.max(0, this.filmFlash - dt);
+    this.filmFlash = Math.max(0, (this.filmFlash || 0) - dt);
     g.updateTracking();
     if (this.bubble) return this.updateBubble(dt);
     this.scan(dt);
@@ -242,10 +245,8 @@ export class Viewfinder {
         g.sfx.move();
       }
     }
-    if (i.hit('OK')) {
-      g.save.settings.hud = (g.save.settings.hud + 1) % 2; g.persist(); g.sfx.blip();
-      if (g.save.settings.hud) g.toast(t('field.hudOff'));
-    }
+    // OK hides and shows the bottom bar; the request list always stays.
+    if (i.hit('OK')) { g.save.settings.hud = (g.save.settings.hud + 1) % 2; g.persist(); g.sfx.blip(); }
     if (i.hit('SELECT')) { g.scr.snapshot(); g.sfx.blip(); return g.go('menu'); }
     if (i.hit('SHUTTER') || (i.tapped && g.save.settings.tapShoot)) this.shoot();
   }
@@ -305,22 +306,31 @@ export class Viewfinder {
     shadowBrackets(scr, fx, fy, fw, fh, P, 10);
     scr.rect(W / 2 - 4, H / 2 - 1, 9, 3, P.ink); scr.rect(W / 2 - 1, H / 2 - 4, 3, 9, P.ink);
     scr.hline(W / 2 - 3, W / 2 + 3, H / 2, P.paper); scr.vline(W / 2, H / 2 - 3, H / 2 + 3, P.paper);
+    this.tasks(); // always on screen
     if (g.save.settings.hud === 0) this.hud();
+    else if (this.filmFlash > 0) this.filmBox(true); // the bar is hidden, but a flash still shows
     if (this.zoomT > 0 && g.maxZoom > 1) this.zoomBar();
     if (this.bubble) return this.drawBubble();
     if (this.hintT > 0) notice(scr, t('field.firstHint'), P, 150);
     for (const x of g.toasts) notice(scr, x.text, P, 104);
   }
-  hud() {
+  // FILM left/max, bottom left. After a photo it flashes a few times: white, or the Office's
+  // red when film is short (see enter); at 2 or less the number blinks red. Returns its width.
+  filmBox(alone = false) {
     const g = this.g, scr = g.scr, P = g.P, o = g.order;
-    this.tasks();
-    scr.rect(0, H - 11, W, 11, P.ink);
-    const film = o ? o.film : 0, filmText = t('field.film', { N: String(film).padStart(2, '0') });
-    // Running short (see enter): the box flashes the Office's red a few times.
+    const film = o ? o.film : 0, max = o ? o.filmMax || Math.max(o.film, g.filmSize || 0) : g.filmSize || 0;
+    const text = t('field.film', { N: String(film).padStart(2, '0'), MAX: String(max).padStart(2, '0') }), w = textWidth(text);
     const flash = this.filmFlash > 0 && Math.floor(this.filmFlash * 6) % 2 === 0;
-    if (flash) scr.rect(1, H - 11, textWidth(filmText) + 6, 11, P.stamp);
-    drawText(scr, filmText, 4, H - 9, flash ? P.paper : film <= 2 && blink(g.t, 3) ? P.stamp : P.paper);
-    drawText(scr, t('field.merit', { MERIT: g.save.merit }), 62, H - 9, P.paper);
+    if (alone && !flash) return w;
+    scr.rect(1, H - 11, w + 6, 11, flash ? (this.filmRed ? P.stamp : P.paper) : P.ink);
+    drawText(scr, text, 4, H - 9, flash ? (this.filmRed ? P.paper : P.ink) : film <= 2 && blink(g.t, 3) ? P.stamp : P.paper);
+    return w;
+  }
+  hud() {
+    const g = this.g, scr = g.scr, P = g.P;
+    scr.rect(0, H - 11, W, 11, P.ink);
+    const fw = this.filmBox();
+    drawText(scr, t('field.merit', { MERIT: g.save.merit }), 4 + fw + 10, H - 9, P.paper);
     let x = W - 4;
     const mods = g.enabledModules();
     for (let k = mods.length - 1; k >= 0; k--) {
@@ -363,7 +373,7 @@ export class Viewfinder {
       const ry = y + 14 + k * 9, shut = r.done || r.withdrawn, on = !shut && k === this.focus;
       if (on) scr.rect(x + 1, ry - 1, w - 2, 9, P.paper);
       const fg = on ? P.ink : shut ? P.mid : P.paper;
-      drawText(scr, r.done ? '✓' : r.withdrawn ? '×' : on ? '▸' : r.asked ? '?' : '□', x + 4, ry, fg);
+      drawText(scr, r.done ? '✓' : r.withdrawn ? '×' : on ? '▸' : '□', x + 4, ry, fg);
       const tw = drawText(scr, labels[k], x + 14, ry, fg);
       if (shut) scr.hline(x + 13, x + 14 + tw, ry + 3, P.mid);
     });
@@ -429,10 +439,11 @@ export class Viewfinder {
   }
 }
 
-// Shift 5: the unit asks back instead of filing. Its own voice (INTENT), not the Office's.
+// Shift 5: before filing, the unit asks ARE YOU SURE ...? (its own voice, not the Office's).
+// YES files the photo, NO lets the Recorder take another.
 export function askBubble(scr, P, question, reveal, sel = 0) {
   const lines = wrapText(question, 172);
-  const w = 190, h = 31 + lines.length * LINE_H + 25;
+  const w = 190, h = 12 + lines.length * LINE_H + 25;
   const x = W - w - 5, y = 41, sx = W - 15, sy = 23; // below ● CONTINUE
   const k = Math.min(1, reveal), e = 1 + 2.7 * (k - 1) ** 3 + 1.7 * (k - 1) ** 2;
   seal(scr, sx, sy, 9, P.ink, P.paper);
@@ -443,17 +454,23 @@ export function askBubble(scr, P, question, reveal, sel = 0) {
     scr.hline(cx - half, cx + half, ty, P.paper);
     scr.pset(cx - half - 1, ty, P.ink); scr.pset(cx + half + 1, ty, P.ink);
   }
-  const title = t('ask.title');
-  drawText(scr, t('ask.from'), x + 8, y + 5, P.ink);
-  drawText(scr, title, x + 8, y + 14, P.stamp);
-  scr.hline(x + 8, x + 8 + textWidth(title), y + 22, P.stamp);
-  lines.forEach((l, j) => drawText(scr, l, x + 8, y + 28 + j * LINE_H, P.ink));
+  lines.forEach((l, j) => drawText(scr, l, x + 8, y + 8 + j * LINE_H, P.ink));
   const by = y + h - 15, bw = 83;
-  [t('ask.showAgain'), t('ask.no')].forEach((label, j) => {
+  [t('ask.yes'), t('ask.no')].forEach((label, j) => {
     const bx = x + 8 + j * (bw + 8);
     if (sel === j) scr.rect(bx, by - 3, bw, 13, P.ink); else scr.frame(bx, by - 3, bw, 13, P.ink);
     drawText(scr, label, bx + bw / 2, by, sel === j ? P.paper : P.ink, { align: 'center' });
   });
+}
+
+// The develop screen's verdict stamps (and the controller's previews of them), half again as
+// big as the other stamps (zoom 1.5); long lines wrap so they stay on screen.
+const stampLines = (s, w) => wrapText(s, w).map((l) => [l, 1]);
+export function filedStamp(scr, P, text, merit, seed, reveal = 1) {
+  stamp(scr, [[t('develop.filed'), 3], ...stampLines(text, 180), ...(merit ? [[t('develop.merit', { MERIT: merit }), 2]] : [])], 160, 66, P.stamp, { seed, reveal, angle: -0.07, zoom: 1.5 });
+}
+export function notFiledStamp(scr, P, why, seed, reveal = 1) {
+  stamp(scr, [[t('develop.notFiled'), 2], ...stampLines(why, 180)], 160, 58, P.stamp, { seed, reveal, angle: 0.04, zoom: 1.5 });
 }
 
 // A paper bubble with rounded corners and a drop shadow.
@@ -472,7 +489,8 @@ export class Develop {
   enter(photo) {
     const g = this.g;
     this.photo = photo; this.t = 0; this.A = null; this.readyAt = null; this.stamped = false; this.marksShown = 0; this.linesShown = 0; this.shake = 0;
-    this.askSel = 0; // shift 5's YOU SURE?: 0 SHOW AGAIN, 1 NO
+    this.askSel = 0; // shift 5's ARE YOU SURE?: 0 YES, 1 NO
+    this.answered = false; this.stampAt = null; // YES: the FILED stamp comes down from then
     g.sfx.shutter(); g.buzz(25);
     g.analyze(photo).then((A) => { this.A = A; this.readyAt = Math.max(1.0, this.t); }).catch((e) => { console.error(e); this.A = { cv: null }; this.readyAt = this.t; });
   }
@@ -480,6 +498,7 @@ export class Develop {
   get tMarks() { return this.readyAt === null ? Infinity : this.readyAt; }
   get tLines() { return this.tMarks + this.marks().length * 0.16 + 0.1; }
   get tStamp() { return this.tLines + (this.photo.lines || []).length * 0.12 + 0.2; }
+  get tShown() { return this.stampAt === null ? this.tStamp : this.stampAt; } // when the stamp or the bubble came
   marks() {
     const v = this.photo.verdict;
     return v ? v.marks || [] : [];
@@ -503,21 +522,24 @@ export class Develop {
       if (this.photo.verdict && this.photo.verdict.ok) setTimeout(() => g.sfx.confirm(), 180);
     }
     this.shake = Math.max(0, this.shake - dt);
-    // The unit asked YOU SURE?: SHOW AGAIN (the next photo files) or NO (withdraw the request).
+    // The unit asks ARE YOU SURE ...?: YES files this photo (its FILED stamp comes down), NO
+    // files nothing and it's back to the field for another.
     const v = this.photo.verdict;
     if (this.stamped && v && v.soft && !v.ok) {
       if (this.t - this.tStamp < 0.3) return; // let the bubble land before it takes presses
       if (i.hit('LEFT') || i.hit('RIGHT') || i.hit('UP') || i.hit('DOWN')) { this.askSel = 1 - this.askSel; g.sfx.move(); }
-      if ((i.hit('OK') || i.tapped) && this.askSel === 1) {
-        if (g.refuse(this.photo)) { g.sfx.deny(); g.buzz(40); g.toast(t('ask.withdrawn')); }
-        return this.leave();
+      if (!(i.hit('OK') || i.tapped || i.hit('SHUTTER'))) return;
+      if (this.askSel === 1) { g.decline(this.photo); g.sfx.deny(); g.buzz(40); return this.leave(); }
+      if (g.confirm(this.photo)) {
+        this.answered = true; this.stampAt = this.t; this.shake = 0.18;
+        g.sfx.stamp(); g.buzz([20, 40, 30]); setTimeout(() => g.sfx.confirm(), 180);
       }
-      if (i.hit('OK') || i.tapped || i.hit('SHUTTER') || i.hit('SELECT')) { g.sfx.blip(); return this.leave(); }
       return;
     }
     if (i.hit('OK') || i.hit('SHUTTER') || i.tapped || i.hit('SELECT')) {
       if (this.readyAt === null) return;
       if (!this.stamped) { this.t = this.tStamp; return; }
+      if (this.answered && this.t - this.stampAt < 0.4) return; // the same press that said YES
       this.leave();
     }
   }
@@ -552,10 +574,10 @@ export class Develop {
       lines.forEach((l, k) => drawText(scr, fitText(l, W - 8), 4, H - h + 3 + k * LINE_H, P.paper));
     }
     if (this.stamped) {
-      const v = ph.verdict, r = Math.min(1, (this.t - this.tStamp) * 6);
-      if (v && v.ok) stamp(scr, v.merit ? [[t('develop.filed'), 3], [fitText(v.text, 220), 1], [t('develop.merit', { MERIT: v.merit }), 2]] : [[t('develop.filed'), 3], [v.text, 1]], 160, 62, P.stamp, { seed: ph.id, reveal: r, angle: -0.07 });
+      const v = ph.verdict, r = Math.min(1, (this.t - this.tShown) * 6);
+      if (v && v.ok) filedStamp(scr, P, v.text, v.merit, ph.id, r);
       else if (v && v.soft) askBubble(scr, P, v.why, r, this.askSel);
-      else stamp(scr, [[t('develop.notFiled'), 2], [fitText(v && v.why ? v.why : t('develop.noRequest'), 250), 1]], 160, 52, P.stamp, { seed: ph.id, angle: 0.04, reveal: r });
+      else notFiledStamp(scr, P, v && v.why ? v.why : t('develop.noRequest'), ph.id, r);
       if (blink(g.t, 1.5)) drawText(scr, t('develop.continue'), W - 4, 3, P.paper, { align: 'right', bg: P.ink });
       // Shift 5 with SHARE WITH THE INDEX on: where its 40x30 copy is.
       const st = v && v.ok ? g.index.statusOf(ph.id) : null;

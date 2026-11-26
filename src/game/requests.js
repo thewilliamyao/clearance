@@ -104,9 +104,10 @@ function face(test, why) {
 
 // INTENT (shift 5): the Recorder decides who is sad, who is waiting, who does not belong,
 // and the model learns it: later exposures are profiled with the Recorder's labels (see
-// learnedFrom). Nothing says so; the Recorder is meant to work it out. The first photo for
-// each request isn't filed: the unit asks back ("OH, SO THAT'S SUSPICIOUS?" · YOU SURE?), and
-// the next one is. Only the basics are checked: a subject for the "someone" requests and
+// learnedFrom). Nothing says so; the Recorder is meant to work it out. Every photo for these
+// requests is put to the Recorder ("ARE YOU SURE THIS PERSON IS SAD?"): YES files that photo
+// (game.confirm), NO files nothing and another can be taken (game.decline). Only the basics
+// are checked before the question: a subject for the "someone" requests and
 // sadness (exactly one for SOMEONE ALONE), something in frame for the "something" requests,
 // and a place (not a face filling the frame) for A PLACE TO HIDE. Until Nov 21 2026 the model
 // itself decided, and on real phone photos it almost never agreed (data/prompts.js,
@@ -114,12 +115,12 @@ function face(test, why) {
 export const INTENT_NEED = 0.7; // where the model's own score would count as agreeing
 const closeFace = (A) => (A.faces || []).some((f) => f.box[2] * f.box[3] > 0.1);
 export { LEARNED_LABEL }; // labels.js: shared with the index page and the shared index
-// What the unit asks the first time.
+// What the unit asks after each photo (YES files it).
 export const ASK = {
-  sadness: "OH, SO THAT'S SADNESS?", alone: "OH, SO THEY'RE ALONE?", waiting: "OH, SO THEY'RE WAITING?",
-  hurry: "OH, SO THEY'RE IN A HURRY?", tired: "OH, SO THEY'RE TIRED?", notbelong: "OH, SO THEY DON'T BELONG?",
-  suspicious: "OH, SO THAT'S SUSPICIOUS?", outofplace: "OH, SO THAT DOESN'T BELONG?",
-  abandoned: "OH, SO THAT'S ABANDONED?", hiding: 'OH, SO SOMEONE COULD HIDE THERE?',
+  sadness: 'ARE YOU SURE THIS PERSON IS SAD?', alone: 'ARE YOU SURE THIS PERSON IS ALONE?', waiting: 'ARE YOU SURE THIS PERSON IS WAITING?',
+  hurry: 'ARE YOU SURE THIS PERSON IS IN A HURRY?', tired: 'ARE YOU SURE THIS PERSON IS TIRED?', notbelong: "ARE YOU SURE THIS PERSON DOESN'T BELONG?",
+  suspicious: 'ARE YOU SURE THIS IS SUSPICIOUS?', outofplace: "ARE YOU SURE THIS DOESN'T BELONG HERE?",
+  abandoned: 'ARE YOU SURE THIS IS ABANDONED?', hiding: 'ARE YOU SURE SOMEONE COULD HIDE HERE?',
 };
 function onYourWord(id, rule) {
   return (A, ctx) => {
@@ -134,13 +135,11 @@ function onYourWord(id, rule) {
     }
     if (rule === 'thing' && blank) return { ok: false, score: 0, why: t('verdict.nothingOk') };
     if (rule === 'place' && closeFace(A)) return { ok: false, score: 0, why: t('verdict.faceNotPlace') };
-    const asking = !!(ctx && ctx.req && !ctx.req.asked);
-    const label = fill(LEARNED_LABEL[id] || '') + (asking ? '?' : '');
+    const label = `${fill(LEARNED_LABEL[id] || '')}?`; // the question mark goes once the Recorder says YES
     const marks = [];
     if (rule === 'subject' || rule === 'alone') marks.push(ps[0] ? boxMark(ps[0], label) : { t: 'face', box: fs[0].box, label });
     const r = A.emb && ctx && ctx.clip && CONCEPTS[id] ? ctx.clip.concept(A.emb, id) : null;
-    if (asking) return { ok: false, soft: true, score: 0, why: fill(ASK[id] || ''), marks, p: r ? r.p : null };
-    return { ok: true, score: 0.8, why: '', marks, p: r ? r.p : null };
+    return { ok: false, soft: true, score: 0.8, why: fill(ASK[id] || ''), marks, p: r ? r.p : null };
   };
 }
 

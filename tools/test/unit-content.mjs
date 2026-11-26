@@ -145,9 +145,8 @@ export async function run(test) {
     const first = judgeSelected(A, reqs, 0, {});
     assert.equal(first.pick, null);
     assert.equal(first.focus.soft, true, 'it asks first, like the shift 5 requests');
-    assert.equal(first.focus.why, "OH, SO THAT'S DANGEROUS?");
-    reqs[0].asked = true;
-    assert.ok(judgeSelected(A, reqs, 0, {}).pick, 'then files on the Recorder\'s word');
+    assert.equal(first.focus.why, 'ARE YOU SURE THIS IS DANGEROUS?');
+    assert.equal(judgeSelected(A, reqs, 0, {}).focus.soft, true, 'it asks every time; YES in the game files it');
     assert.equal(LEARNED_LABEL['q-danger'], 'DANGEROUS');
     for (let s = 1; s < 30; s++) {
       const keys = makeOrder(2, seeded(s), []).requests.map((x) => x.key);

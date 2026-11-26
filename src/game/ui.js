@@ -68,7 +68,8 @@ function smooth(x, y, s) {
 
 // lines: [[text, scale], ...]. Drawn rotated by `angle` with worn, uneven ink.
 // reveal 0..1 lets a stamp "land" (it grows from a smaller size for a frame or two).
-export function stamp(scr, lines, cx, cy, color, { angle = -0.13, seed = 7, pad = 5, reveal = 1 } = {}) {
+// zoom: draw the whole stamp bigger (1.5 = half again), pixels and all.
+export function stamp(scr, lines, cx, cy, color, { angle = -0.13, seed = 7, pad = 5, reveal = 1, zoom = 1 } = {}) {
   const sizes = lines.map(([t, s]) => ({ t, s, w: textWidth(t, s), h: GLYPH_H * s }));
   const iw = Math.max(...sizes.map((z) => z.w)) + pad * 2 + 6;
   const ih = sizes.reduce((a, z) => a + z.h, 0) + (sizes.length - 1) * 4 + pad * 2 + 6;
@@ -80,9 +81,9 @@ export function stamp(scr, lines, cx, cy, color, { angle = -0.13, seed = 7, pad 
     drawText(m, z.t, Math.round((iw - z.w) / 2), ty, 1, { scale: z.s });
     ty += z.h + 4;
   }
-  const k = 1 / Math.max(0.3, reveal);
+  const k = 1 / Math.max(0.3, reveal) / zoom;
   const ca = Math.cos(angle), sa = Math.sin(angle);
-  const R = Math.ceil(Math.hypot(iw, ih) / 2 / Math.max(0.3, reveal)) + 2;
+  const R = Math.ceil((Math.hypot(iw, ih) / 2) * zoom / Math.max(0.3, reveal)) + 2;
   for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
     const sx = (dx * ca + dy * sa) * k + iw / 2, sy = (-dx * sa + dy * ca) * k + ih / 2;
     const ix = Math.floor(sx), iy = Math.floor(sy);

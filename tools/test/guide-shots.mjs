@@ -96,18 +96,18 @@ await shot('3-order'); await field('face', 'face'); await shot('3-field'); await
 await order(4, ['smile', 'nosmile', 'away', 'atyou', 'surprise'], { sensor: 2, tone: 2 });
 await shot('4-order'); await field('turned', 'away'); await shot('4-field'); await expose('4-filed'); await press('OK', 700);
 
-// Shift 5: the unit asks back once, then files; a miss for want of a subject.
+// Shift 5: every photo asks ARE YOU SURE ...?; YES files it, NO lets you shoot again; a miss
+// for want of a subject.
 await order(5, ['sadness', 'alone', 'notbelong', 'suspicious', 'hiding', 'waiting'], { sensor: 3, tone: 3 });
 await shot('5-order');
 await field('room', 'waiting'); await shot('5-field-nosubject'); await expose('5-nosubject'); await press('OK', 700);
 await useImage('sunset'); await aim('waiting'); await wait(1400); await shot('5-field');
-await expose('5-asked'); await press('OK', 700);
-await ev(() => { window.__clearance.game.screens.field.hintT = 0; }); await wait(800); await shot('5-field-asked');
-const filed5 = await expose('5-filed'); await press('OK', 700);
+const filed5 = await expose('5-asked'); await press('OK', 1200); await shot('5-filed'); await press('OK', 700);
 await useImage('studio'); await aim('sadness'); await wait(1200);
-await expose('5-sadness-asked'); await press('OK', 700);
+await expose('5-sadness-asked'); await press('RIGHT', 300); await shot('5-sadness-no'); await press('OK', 700);
+await ev(() => { window.__clearance.game.screens.field.hintT = 0; }); await wait(800); await shot('5-field-after-no');
 await useImage('turned'); await aim('sadness'); await wait(1200);
-await expose('5-sadness-filed'); await press('OK', 700);
+await expose('5-sadness-asked-again'); await press('OK', 1200); await shot('5-sadness-filed'); await press('OK', 700);
 
 // Shift 6: the Recorder's labels in the profile; the subject of an earlier exposure again.
 await order(6, ['again', 'unaware', 'seen', 'place', 'again'], { sensor: 3, tone: 4 }, filed5.id);

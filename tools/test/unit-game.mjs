@@ -58,32 +58,33 @@ export async function run(test) {
     assert.equal(rankIn(1.5, [0, 1, 2]), 0.75);
     assert.equal(rankIn(9, [0, 1, 2]), 1);
   });
-  await test('shift 5: the unit asks once, then files on the Recorder\'s word', () => {
+  await test('shift 5: every photo is put to the Recorder (ARE YOU SURE ...?); the unit never files on its own', () => {
     const clip = (p) => ({ concept: () => ({ p, d: 0, best: 'a photo of a sad person', opp: 'A SMILE' }) });
     const person = { label: 'person', score: 0.8, box: [0.3, 0.2, 0.3, 0.7] };
     const cv = (blank) => ({ blank: { score: blank } });
     const none = { emb: new Float32Array(512), objects: [], faces: [], cv: cv(0.1) };
     const one = { ...none, objects: [person] };
     const asked = (v) => ({ clip: clip(0.05), req: { asked: v } });
-    // People requests and sadness need a subject; then: asked once, filed the next time.
+    // People requests and sadness need a subject; then every photo asks, whatever the model saw
+    // and however often it asked before (YES in the game files it: game.confirm).
     for (const k of ['sadness', 'waiting', 'notbelong', 'hurry', 'tired']) {
       assert.match(REQUESTS[k].judge(none, asked(false)).why, /NO SUBJECT/, k);
-      const first = REQUESTS[k].judge(one, asked(false));
-      assert.equal(first.ok, false); assert.equal(first.soft, true, `${k}: the first photo is a soft fail`);
-      assert.equal(first.why, ASK[k]);
-      assert.ok(first.marks.some((m) => m.label === `${LEARNED_LABEL[k]}?`), 'the subject is tagged with a question');
-      const second = REQUESTS[k].judge(one, asked(true));
-      assert.equal(second.ok, true, `${k} files when the Recorder insists, whatever the model saw`);
-      assert.ok(second.marks.some((m) => m.label === LEARNED_LABEL[k]));
+      for (const before of [false, true]) {
+        const v = REQUESTS[k].judge(one, asked(before));
+        assert.equal(v.ok, false); assert.equal(v.soft, true, `${k}: the photo waits for the Recorder`);
+        assert.equal(v.why, ASK[k]);
+        assert.match(v.why, /^ARE YOU SURE /);
+        assert.ok(v.marks.some((m) => m.label === `${LEARNED_LABEL[k]}?`), 'the subject is tagged with a question');
+      }
     }
     // "Something" requests need something in frame; a place isn't a face filling the frame.
     assert.match(REQUESTS.suspicious.judge({ ...none, cv: cv(0.9) }, asked(true)).why, /NOTHING IN FRAME/);
-    assert.equal(REQUESTS.suspicious.judge(none, asked(true)).ok, true);
+    assert.equal(REQUESTS.suspicious.judge(none, asked(true)).soft, true);
     const selfie = { ...none, faces: [{ score: 0.9, box: [0.2, 0.1, 0.5, 0.6] }] };
     assert.match(REQUESTS.hiding.judge(selfie, asked(true)).why, /A FACE IS NOT A PLACE/);
-    assert.equal(REQUESTS.hiding.judge({ ...none, cv: cv(0.9) }, asked(true)).ok, true, 'a dark corner is a place');
+    assert.equal(REQUESTS.hiding.judge({ ...none, cv: cv(0.9) }, asked(true)).soft, true, 'a dark corner is a place');
     // Works without the INTENT model too.
-    assert.equal(REQUESTS.waiting.judge({ objects: [person], faces: [] }, { req: { asked: true } }).ok, true);
+    assert.equal(REQUESTS.waiting.judge({ objects: [person], faces: [] }, { req: {} }).soft, true);
   });
   await test('a withdrawn request is never judged', () => {
     const reqs = [{ key: 'suspicious', arg: null, done: false, asked: true, withdrawn: true }];
@@ -91,13 +92,13 @@ export async function run(test) {
     const v = judgeSelected(A, reqs, 0, {});
     assert.equal(v.pick, null); assert.equal(v.focus, null);
   });
-  await test('the soft fail is remembered on the work order', () => {
+  await test('a shift 5 request stays open until the Recorder says YES', () => {
     const reqs = [{ key: 'suspicious', arg: null, done: false }];
     const A = { emb: null, objects: [], faces: [], cv: { blank: { score: 0 } } };
-    const v1 = judgeSelected(A, reqs, 0, {});
-    assert.equal(v1.pick, null); assert.equal(v1.focus.soft, true);
-    reqs[0].asked = true; // game.analyze does this
-    assert.ok(judgeSelected(A, reqs, 0, {}).pick, 'the second photo files');
+    for (let k = 0; k < 3; k++) {
+      const v = judgeSelected(A, reqs, 0, {});
+      assert.equal(v.pick, null, 'never filed by the unit'); assert.equal(v.focus.soft, true);
+    }
   });
   await test('later exposures are profiled with what the Recorder filed', () => {
     const e = (i) => { const v = new Float32Array(512); v[i] = 1; return v; };
@@ -117,8 +118,8 @@ export async function run(test) {
   });
   await test('SOMEONE ALONE counts the people in frame', () => {
     const person = (x) => ({ label: 'person', score: 0.7, box: [x, 0.2, 0.2, 0.6] });
-    assert.equal(REQUESTS.alone.judge({ objects: [person(0.4)], faces: [] }).ok, true);
-    assert.equal(REQUESTS.alone.judge({ objects: [], faces: [{ score: 0.9, box: [0.4, 0.3, 0.2, 0.2] }] }).ok, true);
+    assert.equal(REQUESTS.alone.judge({ objects: [person(0.4)], faces: [] }).soft, true, 'one person: the question comes');
+    assert.equal(REQUESTS.alone.judge({ objects: [], faces: [{ score: 0.9, box: [0.4, 0.3, 0.2, 0.2] }] }).soft, true);
     const two = REQUESTS.alone.judge({ objects: [person(0.1), person(0.6)], faces: [] });
     assert.equal(two.ok, false); assert.match(two.why, /2 SUBJECTS/);
     assert.match(REQUESTS.alone.judge({ objects: [], faces: [] }).why, /NO SUBJECT/);

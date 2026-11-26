@@ -26,12 +26,12 @@ export const LENSES = [
   { zoom: 4, name: 'LENS III', spec: 'ZOOM TO 4×' },
 ];
 
-// Film is meant to be scarce (Nov 25: about a sixth less than the first 12 / 18 / 24 / 36).
+// Film is meant to be scarce (Nov 26: half the first 12 / 18 / 24 / 36).
 export const FILMS = [
-  { n: 10, name: 'FILM I', spec: '10 EXPOSURES' },
-  { n: 15, name: 'FILM II', spec: '15 EXPOSURES' },
-  { n: 20, name: 'FILM III', spec: '20 EXPOSURES' },
-  { n: 30, name: 'FILM IV', spec: '30 EXPOSURES' },
+  { n: 6, name: 'FILM I', spec: '6 EXPOSURES' },
+  { n: 9, name: 'FILM II', spec: '9 EXPOSURES' },
+  { n: 12, name: 'FILM III', spec: '12 EXPOSURES' },
+  { n: 18, name: 'FILM IV', spec: '18 EXPOSURES' },
 ];
 
 // Merit multiplier for a sharper sensor: better evidence is worth more to the Office.

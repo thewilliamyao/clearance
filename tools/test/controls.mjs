@@ -188,9 +188,9 @@ const upright = { viewport: { width: 390, height: 664 }, deviceScaleFactor: 2, i
   await ctx.close();
 }
 
-// The FILM box flashes after a photo that leaves less film than the open requests + 2 (not
-// when coming back from the menu); the work order list comes back at a new shift and when a
-// game is resumed, even if OK had hidden it.
+// FILM reads left/max and flashes after every photo: white, or red once fewer are left than
+// the open requests + 2 (not when coming back from the menu). OK hides and shows the bottom
+// bar, never the request list; the bar comes back at a new shift and when a game is resumed.
 {
   const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
   const page = await ctx.newPage();
@@ -204,18 +204,32 @@ const upright = { viewport: { width: 390, height: 664 }, deviceScaleFactor: 2, i
     const g = window.__clearance.game, f = g.screens.field;
     g.jumpTo(1); g.save.phase = 'field'; g.go('field');
     const open = f.open().length;
-    g.order.film = open + 1; f.enter(undefined, 'develop'); const low = f.filmFlash;
-    g.order.film = open + 2; f.enter(undefined, 'develop'); const enough = f.filmFlash;
+    g.order.film = open + 1; f.enter(undefined, 'develop'); const low = { t: f.filmFlash, red: f.filmRed };
+    g.order.film = open + 2; f.enter(undefined, 'develop'); const enough = { t: f.filmFlash, red: f.filmRed };
     g.order.film = open + 1; f.enter(undefined, 'menu'); const menu = f.filmFlash;
     f.enter(undefined, 'develop');
-    return { open, low, enough, menu, film: g.order.film, size: g.filmSize };
+    return { open, low, enough, menu, film: g.order.film, size: g.filmSize, max: g.order.filmMax };
   });
   await page.waitForTimeout(250);
   await page.screenshot({ path: path.join(OUT, 'film-flash.png') });
-  if (!(r.low > 0)) fail(`film flash: no flash with ${r.open + 1} film for ${r.open} open requests`);
-  if (r.enough !== 0) fail(`film flash: flashed with ${r.open + 2} film for ${r.open} open requests`);
+  if (!(r.low.t > 0) || !r.low.red) fail(`film flash: wanted red with ${r.open + 1} film for ${r.open} open requests ${JSON.stringify(r.low)}`);
+  if (!(r.enough.t > 0) || r.enough.red) fail(`film flash: wanted white with ${r.open + 2} film for ${r.open} open requests ${JSON.stringify(r.enough)}`);
   if (r.menu !== 0) fail('film flash: flashed coming back from the menu');
-  if (r.size !== 10) fail(`film: FILM I gives ${r.size}, wanted 10`);
+  if (r.size !== 6 || r.max !== 6) fail(`film: FILM I gives ${r.size} (max ${r.max}), wanted 6`);
+  // OK hides the bar but not the list: the list's ink is still top left, the bar's is gone.
+  const px = (x, y) => page.evaluate(([x, y]) => { const c = document.getElementById('screen'); const d = c.getContext('2d').getImageData(Math.round(c.width * x / 320), Math.round(c.height * y / 240), 1, 1).data; return `${d[0]},${d[1]},${d[2]}`; }, [x, y]);
+  const ink = await page.evaluate(() => { const c = window.__clearance.game.P.ink; return `${c & 255},${(c >> 8) & 255},${(c >> 16) & 255}`; });
+  await page.evaluate(() => { const g = window.__clearance.game; g.screens.field.filmFlash = 0; g.save.settings.hud = 1; });
+  await page.waitForTimeout(200);
+  const row = async () => { const out = []; for (let x = 130; x <= 200; x += 5) out.push(await px(x, 236)); return out.join(' '); };
+  const hidden = { list: await px(3, 4), bar: await row() };
+  await page.evaluate(() => { window.__clearance.game.save.settings.hud = 0; });
+  await page.waitForTimeout(200);
+  const shown = { list: await px(3, 4), bar: await row() };
+  if (hidden.list !== ink) fail(`hidden UI: the request list is gone (${hidden.list}, ink ${ink})`);
+  if (shown.bar.split(' ').some((c) => c !== ink)) fail(`the bottom bar doesn't come back (${shown.bar}, ink ${ink})`);
+  if (hidden.bar === shown.bar) fail('OK did not hide the bottom bar');
+  await page.screenshot({ path: path.join(OUT, 'film-bar.png') });
   const h = await page.evaluate(async () => {
     const g = window.__clearance.game;
     g.save.settings.hud = 1; g.startShift(); const shift = g.save.settings.hud;
@@ -224,7 +238,7 @@ const upright = { viewport: { width: 390, height: 664 }, deviceScaleFactor: 2, i
   });
   if (h.shift !== 0) fail('work order: still hidden at a new shift');
   if (h.resumed !== 0) fail('work order: still hidden after resuming');
-  console.log(`film flash             ${r.open} open: flashes at ${r.open + 1} film, not at ${r.open + 2}; work order shown at a new shift and on resume`);
+  console.log(`film flash             ${r.open} open: red at ${r.open + 1} film, white at ${r.open + 2}; FILM I = ${r.size}; the list stays when OK hides the bar`);
   await ctx.close();
 }
 

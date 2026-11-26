@@ -12,6 +12,9 @@ import { SharedIndex } from './shared-index.js';
 import * as S from './screens.js';
 
 const TRACKS = { sensor: SENSORS, tone: TONES, lens: LENSES, film: FILMS, tracking: [{ name: 'TRACKING OFF' }, { name: 'TRACKING', spec: 'LIVE OBJECT BOXES' }] };
+// Merit for a filing: the request's merit, more for a sharper sensor, up to +25% for a clear match.
+const meritFor = (def, sensor, score) => (def && def.merit ? Math.round(def.merit * SENSOR_BONUS[sensor] * (1 + 0.25 * Math.max(0, Math.min(1, (score - 0.5) / 0.5)))) : 0);
+
 export const SHOP = [
   { track: 'sensor', costs: [0, 40, 90, 160, 260] },
   { track: 'tone', costs: [0, 30, 80, 140, 220, 320] },
@@ -35,6 +38,7 @@ export class Game {
     this.sfx.on = this.save.settings.sound;
     this.index = new SharedIndex(this);
     this.indexPrint = null; // the last capture's 40x30 two-tone bits, while it's being judged
+    this.pendingPrint = null; // ...and a shift 5 photo's, while it waits for the Recorder's YES
     setTimeout(() => this.index.flush(), 4000); // anything queued last time
     this.t = 0;
     this.toasts = [];
@@ -254,8 +258,7 @@ export class Game {
       verdict = judgeSelected(A, o.requests, focus, ctx);
       const pick = verdict.pick;
       if (pick) {
-        const quality = Math.max(0, Math.min(1, (pick.score - 0.5) / 0.5));
-        const merit = pick.def.merit ? Math.round(pick.def.merit * SENSOR_BONUS[photo.sensor] * (1 + 0.25 * quality)) : 0;
+        const merit = meritFor(pick.def, photo.sensor, pick.score);
         pick.req.done = true; pick.req.photo = photo.id; pick.req.merit = merit;
         o.earned += merit; this.save.merit += merit; this.save.earned += merit;
         photo.verdict = { ok: true, key: pick.req.key, text: requestText(pick.req), merit, marks: pick.marks || [] };
@@ -263,7 +266,8 @@ export class Game {
         if (LEARNED_LABEL[pick.req.key] && ip && ip.id === photo.id) this.index.file(photo.id, pick.req.key, ip.px);
       } else {
         const f = verdict.focus;
-        if (f && f.soft) f.req.asked = true; // shift 5: it asked once; the next photo files
+        // Shift 5: the photo waits for the Recorder's YES (confirm); keep its index print till then.
+        if (f && f.soft && this.indexPrint && this.indexPrint.id === photo.id) this.pendingPrint = this.indexPrint;
         photo.verdict = { ok: false, soft: !!(f && f.soft), key: f ? f.req.key : null, i: f ? f.i : null, text: f ? requestText(f.req) : '', why: f ? f.why : 'NO OPEN REQUEST', marks: f ? f.marks || [] : [] };
         if (o.requests.some((r) => r.key === 'self' && !r.done)) this.save.selfMisses++;
       }
@@ -294,7 +298,7 @@ export class Game {
   startShift() {
     const seed = (Date.now() ^ (this.save.day * 2654435761)) >>> 0;
     const { requests, quota } = makeOrder(this.save.day, seeded(seed), this.store.list);
-    this.save.order = { requests, quota, film: this.filmSize, earned: 0, shots: 0, seed, day: this.save.day };
+    this.save.order = { requests, quota, film: this.filmSize, filmMax: this.filmSize, earned: 0, shots: 0, seed, day: this.save.day };
     this.save.phase = 'order';
     this.save.selfMisses = 0;
     this.save.settings.hud = 0; // every new work order starts with the list showing, top left
@@ -306,14 +310,33 @@ export class Game {
   allDone() { return this.order && this.order.requests.every((r) => r.done || r.withdrawn); }
   withdrawn() { return this.order ? this.order.requests.filter((r) => r.withdrawn).length : 0; }
 
-  // Shift 5: the Recorder answered NO to "YOU SURE?". That request is struck off for the rest
-  // of the shift and the refusal goes on the Recorder's record (ENDINGS.md).
-  refuse(photo) {
-    const o = this.order, v = photo.verdict, r = o && v && o.requests[v.i];
+  // Shift 5: the Recorder answered YES to ARE YOU SURE ...?. This photo files the request on
+  // their word, the subject loses its question mark, and the model learns the label from it
+  // (learnedFrom). With SHARE WITH THE INDEX on, its 40x30 print goes to the index now.
+  confirm(photo) {
+    const o = this.order, v = photo.verdict, r = o && v && v.soft && o.requests[v.i];
     if (!r || r.key !== v.key || r.done || r.withdrawn) return false;
-    r.withdrawn = true;
+    const merit = meritFor(REQUESTS[r.key], photo.sensor, 0.8);
+    r.done = true; r.photo = photo.id; r.merit = merit;
+    o.earned += merit; this.save.merit += merit; this.save.earned += merit;
+    const marks = (v.marks || []).map((m) => (m.label ? { ...m, label: m.label.replace(/\?$/, '') } : m));
+    photo.verdict = { ok: true, key: r.key, text: requestText(r), merit, marks, confirmed: true };
+    const ip = this.pendingPrint;
+    if (LEARNED_LABEL[r.key] && ip && ip.id === photo.id) this.index.file(photo.id, r.key, ip.px);
+    this.pendingPrint = null;
+    this.store.put(photo);
+    this.persist();
+    return true;
+  }
+
+  // Shift 5: the Recorder answered NO. Nothing is filed and the request stays open for another
+  // photo; the refusal still goes on the Recorder's record (ENDINGS.md).
+  decline(photo) {
+    const v = photo.verdict;
+    if (!v || !v.soft || v.refused) return false;
     v.refused = true;
     this.save.refusals = (this.save.refusals || 0) + 1;
+    this.pendingPrint = null;
     this.store.put(photo);
     this.persist();
     return true;
